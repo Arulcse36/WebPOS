@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import axios from "axios";
 
-const API = "http://192.168.1.14:5000/categories";
+const API = `${import.meta.env.VITE_API_URL}/categories`;
 
 const Category = () => {
     const [name, setName] = useState("");

@@ -1,7 +1,8 @@
 import { useState, useEffect } from "react";
 import axios from "axios";
 
-const API = "http://192.168.1.14:5000/todos";
+
+const API = `${import.meta.env.VITE_API_URL}/todos`;
 
 const Todo = () => {
   const [task, setTask] = useState("");

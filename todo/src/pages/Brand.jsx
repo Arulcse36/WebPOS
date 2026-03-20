@@ -1,7 +1,8 @@
 import { useState, useEffect } from "react";
 import axios from "axios";
 
-const API = "http://192.168.1.14:5000/brands";
+
+const API = `${import.meta.env.VITE_API_URL}/brands`;
 
 const Brand = () => {
     const [name, setName] = useState("");

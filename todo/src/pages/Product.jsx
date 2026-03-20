@@ -1,7 +1,9 @@
 import { useState, useEffect } from "react";
 import axios from "axios";
 
-const API = "http://192.168.1.14:5000";
+
+const API = `${import.meta.env.VITE_API_URL}`;
+
 
 // Move these components outside
 const InputField = ({ label, name, value, onChange, type = "text", required = true, error, disabled }) => (
