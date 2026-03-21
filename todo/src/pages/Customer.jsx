@@ -8,7 +8,8 @@ const Customer = () => {
         name: "",
         phone: "",
         email: "",
-        address: ""
+        address: "",
+        openingBalance: 0
     });
 
     const [list, setList] = useState([]);
@@ -18,11 +19,17 @@ const Customer = () => {
         loadData();
     }, []);
 
+    // 🔹 Load Customers
     const loadData = async () => {
-        const res = await axios.get(API);
-        setList(res.data);
+        try {
+            const res = await axios.get(API);
+            setList(res.data);
+        } catch (err) {
+            console.error(err);
+        }
     };
 
+    // 🔹 Save (Add / Update)
     const saveCustomer = async () => {
         if (!form.name || !form.phone) {
             alert("Name & Phone required");
@@ -43,11 +50,13 @@ const Customer = () => {
                 setList([res.data, ...list]);
             }
 
+            // Reset form
             setForm({
                 name: "",
                 phone: "",
                 email: "",
-                address: ""
+                address: "",
+                openingBalance: 0
             });
 
         } catch (err) {
@@ -55,21 +64,28 @@ const Customer = () => {
         }
     };
 
+    // 🔹 Edit
     const editItem = (item) => {
         setForm({
             name: item.name,
             phone: item.phone,
-            email: item.email,
-            address: item.address
+            email: item.email || "",
+            address: item.address || "",
+            openingBalance: item.openingBalance || 0
         });
         setEditId(item._id);
     };
 
+    // 🔹 Delete
     const deleteItem = async (id) => {
         if (!window.confirm("Delete this customer?")) return;
 
-        await axios.delete(`${API}/${id}`);
-        setList(list.filter(x => x._id !== id));
+        try {
+            await axios.delete(`${API}/${id}`);
+            setList(list.filter(x => x._id !== id));
+        } catch (err) {
+            console.error(err);
+        }
     };
 
     return (
@@ -82,42 +98,76 @@ const Customer = () => {
                 </h1>
 
                 {/* FORM */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
 
-                    <input
-                        value={form.name}
-                        onChange={(e) => setForm({ ...form, name: e.target.value })}
-                        placeholder="Name"
-                        className="px-3 h-11 border rounded-lg"
-                    />
+                    {/* Name */}
+                    <div>
+                        <label className="text-sm font-medium">Customer Name *</label>
+                        <input
+                            value={form.name}
+                            onChange={(e) => setForm({ ...form, name: e.target.value })}
+                            className="w-full px-3 h-11 border rounded-lg mt-1"
+                        />
+                    </div>
 
-                    <input
-                        value={form.phone}
-                        onChange={(e) => setForm({ ...form, phone: e.target.value })}
-                        placeholder="Phone"
-                        className="px-3 h-11 border rounded-lg"
-                    />
+                    {/* Phone */}
+                    <div>
+                        <label className="text-sm font-medium">Phone Number *</label>
+                        <input
+                            value={form.phone}
+                            onChange={(e) => setForm({ ...form, phone: e.target.value })}
+                            className="w-full px-3 h-11 border rounded-lg mt-1"
+                        />
+                    </div>
 
-                    <input
-                        value={form.email}
-                        onChange={(e) => setForm({ ...form, email: e.target.value })}
-                        placeholder="Email"
-                        className="px-3 h-11 border rounded-lg"
-                    />
+                    {/* Email */}
+                    <div>
+                        <label className="text-sm font-medium">Email</label>
+                        <input
+                            value={form.email}
+                            onChange={(e) => setForm({ ...form, email: e.target.value })}
+                            className="w-full px-3 h-11 border rounded-lg mt-1"
+                        />
+                    </div>
 
-                    <input
-                        value={form.address}
-                        onChange={(e) => setForm({ ...form, address: e.target.value })}
-                        placeholder="Address"
-                        className="px-3 h-11 border rounded-lg"
-                    />
+                    {/* Address */}
+                    <div>
+                        <label className="text-sm font-medium">Address</label>
+                        <input
+                            value={form.address}
+                            onChange={(e) => setForm({ ...form, address: e.target.value })}
+                            className="w-full px-3 h-11 border rounded-lg mt-1"
+                        />
+                    </div>
 
-                    <button
-                        onClick={saveCustomer}
-                        className="col-span-1 sm:col-span-2 px-4 h-11 bg-blue-500 text-white rounded-lg"
-                    >
-                        {editId ? "Update Customer" : "Add Customer"}
-                    </button>
+                    {/* Opening Balance */}
+                    <div className="sm:col-span-2">
+                        <label className="text-sm font-medium">
+                            Opening Balance (+Due / -Advance)
+                        </label>
+                        <input
+                            type="number"
+                            value={form.openingBalance}
+                            onChange={(e) =>
+                                setForm({
+                                    ...form,
+                                    openingBalance: Number(e.target.value)
+                                })
+                            }
+                            className="w-full px-3 h-11 border rounded-lg mt-1"
+                        />
+                    </div>
+
+                    {/* Button */}
+                    <div className="sm:col-span-2">
+                        <button
+                            onClick={saveCustomer}
+                            className="w-full px-4 h-11 bg-blue-500 text-white rounded-lg"
+                        >
+                            {editId ? "Update Customer" : "Add Customer"}
+                        </button>
+                    </div>
+
                 </div>
 
                 {/* LIST */}
@@ -149,6 +199,18 @@ const Customer = () => {
                                         📍 {item.address}
                                     </span>
                                 )}
+
+                                {/* Balance */}
+                                <span className={`text-sm font-semibold mt-1 ${
+                                    item.balance > 0
+                                        ? "text-red-500"
+                                        : "text-green-600"
+                                }`}>
+                                    {item.balance > 0
+                                        ? `Due: ₹${item.balance}`
+                                        : `Advance: ₹${Math.abs(item.balance)}`
+                                    }
+                                </span>
                             </div>
 
                             {/* RIGHT */}
