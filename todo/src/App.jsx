@@ -6,6 +6,8 @@ import Category from "./pages/Category";
 import Brand from "./pages/Brand";
 import Uom from "./pages/Uom";
 import Product from "./pages/Product";
+import POS from "./pages/POS";
+import Customer from "./pages/Customer";
 
 
 const App = () => {
@@ -19,6 +21,8 @@ const App = () => {
           <Route path="products/brand" element={<Brand />} />
           <Route path="products/uom" element={<Uom />} />
           <Route path="products/product" element={<Product />} />
+          <Route path="pos" element={<POS />} />
+          <Route path="customer" element={<Customer />} />
 
         </Route>
       </Routes>

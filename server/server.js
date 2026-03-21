@@ -9,6 +9,8 @@ const Category = require("./models/Category");
 const Brand = require("./models/Brand");
 const Uom = require("./models/Uom");
 const Product = require("./models/Product");
+const customerRoutes = require("./routes/CustomerRoutes");
+
 
 const app = express();
 
@@ -289,7 +291,41 @@ app.put("/products/:id", async (req, res) => {
   }
 });
 
+const Invoice = require("./models/Invoice");
 
+app.post("/billing", async (req, res) => {
+  try {
+    const { items } = req.body;
+
+    let totalAmount = 0;
+
+    // update stock
+    for (let item of items) {
+      totalAmount += item.total;
+
+      await Product.findByIdAndUpdate(
+        item.product,
+        { $inc: { stock: -item.qty } }
+      );
+    }
+
+    const invoice = new Invoice({
+      items,
+      totalAmount
+    });
+
+    const saved = await invoice.save();
+
+    res.json(saved);
+
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+
+
+app.use("/customers", customerRoutes);
 
 // Server start
 const PORT = process.env.PORT || 5000;

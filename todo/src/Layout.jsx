@@ -106,6 +106,19 @@ const Layout = () => {
             📝 Todo
           </NavLink>
 
+
+             <NavLink
+            to="/Customer"
+            className={({ isActive }) =>
+              `p-2 rounded flex items-center gap-2 ${isActive ? "bg-blue-500" : "hover:bg-slate-700"
+              }`
+            }
+          >
+            📝 Customer
+          </NavLink>
+
+          <NavLink to="/pos">🧾 POS</NavLink>
+
         </nav>
       </div>
 
@@ -191,6 +204,11 @@ const Layout = () => {
 
               <NavLink to="/todo" onClick={() => setOpenSidebar(false)}>
                 📝 Todo
+              </NavLink>
+
+
+                 <NavLink to="/Customer" onClick={() => setOpenSidebar(false)}>
+                📝 Customer
               </NavLink>
 
             </nav>
