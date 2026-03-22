@@ -11,7 +11,8 @@ const useDebounce = (value, delay) => {
   return debouncedValue;
 };
 
-const API = "http://192.168.1.14:5000";
+const API = `${import.meta.env.VITE_API_URL}`;
+
 
 // Helper function to safely get string value from category/brand
 const getSafeString = (value) => {
@@ -83,10 +84,24 @@ const POS = () => {
   const [discount, setDiscount] = useState(0);
   const [paymentMethod, setPaymentMethod] = useState("cash");
   
+  // Customer related states
+  const [customers, setCustomers] = useState([]);
+  const [selectedCustomer, setSelectedCustomer] = useState(null);
+  const [customerSearch, setCustomerSearch] = useState("");
+  const [showCustomerModal, setShowCustomerModal] = useState(false);
+  const [customerLoading, setCustomerLoading] = useState(false);
+  const [newCustomer, setNewCustomer] = useState({
+    name: "",
+    phone: "",
+    email: "",
+    address: ""
+  });
+  
   // Mobile UI State
   const [isCartOpen, setIsCartOpen] = useState(false);
 
   const debouncedSearch = useDebounce(search, 300);
+  const debouncedCustomerSearch = useDebounce(customerSearch, 300);
 
   // Function to close cart (works for both mobile and desktop)
   const closeCart = useCallback(() => {
@@ -115,6 +130,29 @@ const POS = () => {
     };
   }, [products]);
 
+  // Fetch customers
+  const fetchCustomers = useCallback(async () => {
+    setCustomerLoading(true);
+    try {
+      const res = await axios.get(`${API}/customers`, { timeout: 8000 });
+      setCustomers(res.data);
+    } catch (error) { 
+      console.error("Fetch customers error:", error);
+    } finally { 
+      setCustomerLoading(false); 
+    }
+  }, []);
+
+  // Filter customers based on search
+  const filteredCustomers = useMemo(() => {
+    if (!debouncedCustomerSearch) return customers;
+    return customers.filter(customer => 
+      customer.name.toLowerCase().includes(debouncedCustomerSearch.toLowerCase()) ||
+      (customer.phone && customer.phone.includes(debouncedCustomerSearch)) ||
+      (customer.email && customer.email.toLowerCase().includes(debouncedCustomerSearch.toLowerCase()))
+    );
+  }, [customers, debouncedCustomerSearch]);
+
   const fetchProducts = useCallback(async () => {
     setLoading(true);
     try {
@@ -129,13 +167,23 @@ const POS = () => {
   }, []);
 
   useEffect(() => { fetchProducts(); }, [fetchProducts]);
+  useEffect(() => { fetchCustomers(); }, [fetchCustomers]);
 
   useEffect(() => {
     const saved = localStorage.getItem('pos_cart');
     if (saved) setCart(JSON.parse(saved));
+    const savedCustomer = localStorage.getItem('pos_selected_customer');
+    if (savedCustomer) setSelectedCustomer(JSON.parse(savedCustomer));
   }, []);
 
-  useEffect(() => { localStorage.setItem('pos_cart', JSON.stringify(cart)); }, [cart]);
+  useEffect(() => { 
+    localStorage.setItem('pos_cart', JSON.stringify(cart));
+    if (selectedCustomer) {
+      localStorage.setItem('pos_selected_customer', JSON.stringify(selectedCustomer));
+    } else {
+      localStorage.removeItem('pos_selected_customer');
+    }
+  }, [cart, selectedCustomer]);
 
   const filteredProducts = useMemo(() => 
     products.filter(p => {
@@ -195,6 +243,39 @@ const POS = () => {
     }
   }, []);
 
+  // Customer handlers
+  const handleSelectCustomer = useCallback((customer) => {
+    setSelectedCustomer(customer);
+    setShowCustomerModal(false);
+    setCustomerSearch("");
+  }, []);
+
+  const handleRemoveCustomer = useCallback(() => {
+    setSelectedCustomer(null);
+  }, []);
+
+  const handleCreateCustomer = useCallback(async () => {
+    if (!newCustomer.name.trim()) {
+      alert("Please enter customer name");
+      return;
+    }
+    
+    try {
+      const res = await axios.post(`${API}/customers`, newCustomer);
+      if (res.data.success || res.data._id) {
+        const createdCustomer = res.data;
+        setCustomers(prev => [...prev, createdCustomer]);
+        setSelectedCustomer(createdCustomer);
+        setNewCustomer({ name: "", phone: "", email: "", address: "" });
+        setShowCustomerModal(false);
+        alert("Customer added successfully!");
+      }
+    } catch (error) {
+      console.error("Create customer error:", error);
+      alert("Failed to create customer. Please try again.");
+    }
+  }, [newCustomer]);
+
   // Payment method handlers
   const paymentMethods = [
     { id: 'cash', label: '💵 CASH', color: 'bg-green-600 hover:bg-green-700' },
@@ -214,13 +295,16 @@ const POS = () => {
         discount: discountAmount, 
         paymentMethod, 
         total, 
+        customerId: selectedCustomer?._id || null,
+        customerName: selectedCustomer?.name || "Walk-in Customer",
         timestamp: new Date().toISOString() 
       };
       const res = await axios.post(`${API}/billing`, payload);
       if (res.data.success) {
-        alert("Transaction Successful!");
+        alert(`Transaction Successful! ${selectedCustomer ? `Customer: ${selectedCustomer.name}` : "Walk-in Customer"}`);
         setCart([]);
         setDiscount(0);
+        setSelectedCustomer(null);
         closeCart(); // Close cart after successful checkout
         fetchProducts();
       }
@@ -230,7 +314,7 @@ const POS = () => {
     } finally { 
       setCheckoutLoading(false); 
     }
-  }, [cart, discountAmount, paymentMethod, total, fetchProducts, closeCart]);
+  }, [cart, discountAmount, paymentMethod, total, selectedCustomer, fetchProducts, closeCart]);
 
   const formatCurrency = (amt) => new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(amt);
 
@@ -243,6 +327,94 @@ const POS = () => {
 
   return (
     <div className="relative flex flex-col md:flex-row h-screen bg-gray-50 text-black overflow-hidden">
+      
+      {/* Customer Selection Modal */}
+      {showCustomerModal && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl max-w-md w-full max-h-[80vh] flex flex-col">
+            <div className="p-4 border-b flex justify-between items-center">
+              <h3 className="font-bold text-lg">Select Customer</h3>
+              <button 
+                onClick={() => setShowCustomerModal(false)}
+                className="text-gray-500 hover:text-gray-700 text-xl"
+              >
+                ✕
+              </button>
+            </div>
+            
+            <div className="p-4 border-b">
+              <input
+                type="text"
+                placeholder="Search by name, phone or email..."
+                className="w-full p-2 border border-gray-200 rounded-lg focus:border-blue-500 outline-none"
+                value={customerSearch}
+                onChange={(e) => setCustomerSearch(e.target.value)}
+              />
+            </div>
+            
+            <div className="flex-1 overflow-y-auto p-4">
+              {customerLoading ? (
+                <div className="text-center py-4">Loading customers...</div>
+              ) : filteredCustomers.length > 0 ? (
+                <div className="space-y-2">
+                  {filteredCustomers.map(customer => (
+                    <button
+                      key={customer._id}
+                      onClick={() => handleSelectCustomer(customer)}
+                      className="w-full text-left p-3 border rounded-lg hover:border-blue-500 hover:bg-blue-50 transition-all"
+                    >
+                      <div className="font-bold text-sm">{customer.name}</div>
+                      {customer.phone && <div className="text-xs text-gray-600">📞 {customer.phone}</div>}
+                      {customer.email && <div className="text-xs text-gray-600">✉️ {customer.email}</div>}
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-center py-8">
+                  <p className="text-gray-500 mb-4">No customers found</p>
+                  <div className="border-t pt-4">
+                    <h4 className="font-bold text-sm mb-3">Add New Customer</h4>
+                    <input
+                      type="text"
+                      placeholder="Name *"
+                      className="w-full p-2 border border-gray-200 rounded-lg mb-2"
+                      value={newCustomer.name}
+                      onChange={(e) => setNewCustomer(prev => ({ ...prev, name: e.target.value }))}
+                    />
+                    <input
+                      type="tel"
+                      placeholder="Phone"
+                      className="w-full p-2 border border-gray-200 rounded-lg mb-2"
+                      value={newCustomer.phone}
+                      onChange={(e) => setNewCustomer(prev => ({ ...prev, phone: e.target.value }))}
+                    />
+                    <input
+                      type="email"
+                      placeholder="Email"
+                      className="w-full p-2 border border-gray-200 rounded-lg mb-2"
+                      value={newCustomer.email}
+                      onChange={(e) => setNewCustomer(prev => ({ ...prev, email: e.target.value }))}
+                    />
+                    <textarea
+                      placeholder="Address"
+                      className="w-full p-2 border border-gray-200 rounded-lg mb-2"
+                      rows="2"
+                      value={newCustomer.address}
+                      onChange={(e) => setNewCustomer(prev => ({ ...prev, address: e.target.value }))}
+                    />
+                    <button
+                      onClick={handleCreateCustomer}
+                      className="w-full bg-blue-600 text-white py-2 rounded-lg font-bold text-sm"
+                    >
+                      Create Customer
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
       
       {/* Mobile Header */}
       <div className="md:hidden flex justify-between items-center p-3 bg-white border-b shadow-sm z-20">
@@ -399,6 +571,47 @@ const POS = () => {
 
           {/* Billing Footer */}
           <div className="p-4 bg-gray-50 border-t space-y-3">
+            {/* Customer Selection Section */}
+            <div className="space-y-2">
+              <div className="flex justify-between items-center">
+                <span className="text-xs font-bold text-black">CUSTOMER</span>
+                {!selectedCustomer && (
+                  <button
+                    onClick={() => setShowCustomerModal(true)}
+                    className="text-xs bg-blue-600 text-white px-2 py-1 rounded font-bold"
+                  >
+                    + ADD CUSTOMER
+                  </button>
+                )}
+              </div>
+              
+              {selectedCustomer ? (
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-2">
+                  <div className="flex justify-between items-start">
+                    <div>
+                      <div className="font-bold text-sm text-blue-900">{selectedCustomer.name}</div>
+                      {selectedCustomer.phone && (
+                        <div className="text-xs text-blue-700">📞 {selectedCustomer.phone}</div>
+                      )}
+                      {selectedCustomer.email && (
+                        <div className="text-xs text-blue-700">✉️ {selectedCustomer.email}</div>
+                      )}
+                    </div>
+                    <button
+                      onClick={handleRemoveCustomer}
+                      className="text-red-500 text-xs font-bold hover:text-red-700"
+                    >
+                      Change
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="bg-gray-100 border border-gray-200 rounded-lg p-2 text-center">
+                  <span className="text-xs text-gray-600">Walk-in Customer</span>
+                </div>
+              )}
+            </div>
+
             <div className="space-y-2">
               <div className="flex justify-between text-gray-600 text-xs font-bold uppercase">
                 <span>Subtotal</span>

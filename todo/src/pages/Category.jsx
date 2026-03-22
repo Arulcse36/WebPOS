@@ -3,6 +3,8 @@ import axios from "axios";
 
 const API = `${import.meta.env.VITE_API_URL}/categories`;
 
+//const API = "http://192.168.1.14:5000/categories";
+
 const Category = () => {
     const [name, setName] = useState("");
     const [list, setList] = useState([]);
@@ -33,7 +35,7 @@ const Category = () => {
 
             setName("");
         } catch {
-            alert("Category already exists");
+            alert(API);
         }
     };
 

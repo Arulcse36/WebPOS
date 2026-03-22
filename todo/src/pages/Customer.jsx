@@ -65,16 +65,16 @@ const Customer = () => {
     };
 
     // 🔹 Edit
-    const editItem = (item) => {
-        setForm({
-            name: item.name,
-            phone: item.phone,
-            email: item.email || "",
-            address: item.address || "",
-            openingBalance: item.openingBalance || 0
-        });
-        setEditId(item._id);
-    };
+const editItem = (item) => {
+    setForm({
+        name: item.name,
+        phone: item.phone,
+        email: item.email || "",
+        address: item.address || "",
+        openingBalance: item.balance || 0   // ✅ FIX
+    });
+    setEditId(item._id);
+};
 
     // 🔹 Delete
     const deleteItem = async (id) => {
