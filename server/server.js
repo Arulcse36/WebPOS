@@ -1,21 +1,13 @@
 require("dotenv").config();
-
 const express = require("express");
 const mongoose = require("mongoose");
 const cors = require("cors");
 
 
-const Category = require("./models/Category");
-const Brand = require("./models/Brand");
-const Uom = require("./models/Uom");
-const Product = require("./models/Product");
-
-const todoRoutes = require("./routes/todoRoutes");
 const categoryRoutes = require("./routes/categoryRoutes");
 const brandRoutes = require("./routes/brandRoutes");
 const uomRoutes = require("./routes/uomRoutes");
 const productRoutes = require("./routes/productRoutes");
-
 const billRoutes = require('./routes/billRoutes');
 const customerRoutes = require('./routes/customerRoutes');
 
@@ -25,12 +17,11 @@ app.use(express.json());
 
 app.use('/bills', billRoutes);  // This will make /billing work
 app.use('/customers', customerRoutes);  // This will make /customers work
-app.use("/todos", todoRoutes);
 app.use("/categories", categoryRoutes);
 app.use("/brands", brandRoutes);
 app.use("/uoms", uomRoutes);
 app.use("/products", productRoutes);
-app.use("/billing", billRoutes);
+app.use('/reports', require('./routes/reportRoutes'));
 
 
 // Connect MongoDB

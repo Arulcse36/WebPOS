@@ -1,8 +1,5 @@
 const mongoose = require('mongoose');
 
-/* ================================
-   BILL ITEM SCHEMA
-================================ */
 const billItemSchema = new mongoose.Schema({
   productId: {
     type: mongoose.Schema.Types.ObjectId,
@@ -22,49 +19,33 @@ const billItemSchema = new mongoose.Schema({
     type: Number,
     required: true
   },
-  total: {
-    type: Number,
-    required: true
-  }
+  total: Number
 });
 
-/* ================================
-   BILL SCHEMA
-================================ */
 const billSchema = new mongoose.Schema({
   billNumber: {
     type: String,
-    unique: true,
-    required: true
+    unique: true
   },
 
   items: [billItemSchema],
 
-  subtotal: {
-    type: Number,
-    required: true
-  },
+  subtotal: Number,
+  discount: { type: Number, default: 0 },
+  discountAmount: Number,
+  total: Number,
 
-  discount: {
-    type: Number,
-    default: 0
-  },
-
-  discountAmount: {
-    type: Number,
-    default: 0
-  },
-
-  total: {
-    type: Number,
-    required: true
-  },
 
   paymentMethod: {
     type: String,
-    enum: ['cash', 'card', 'upi'],
+    enum: ['cash', 'card', 'upi', 'credit'],
     required: true
   },
+
+  paidAmount: { type: Number, default: 0 },
+  dueAmount: { type: Number, default: 0 },
+  cashPaid: { type: Number, default: 0 },
+  upiPaid: { type: Number, default: 0 },
 
   customer: {
     customerId: {
@@ -75,9 +56,7 @@ const billSchema = new mongoose.Schema({
     name: {
       type: String,
       default: 'Walk-in Customer'
-    },
-    phone: String,
-    email: String
+    }
   },
 
   cashier: {
@@ -96,87 +75,32 @@ const billSchema = new mongoose.Schema({
     default: Date.now
   },
 
-  notes: String,
-
-  createdAt: {
-    type: Date,
-    default: Date.now
-  },
-
-  updatedAt: {
-    type: Date,
-    default: Date.now
+  billDate: {
+    type: Date
   }
-});
 
-/* ================================
-   AUTO GENERATE BILL NUMBER
-================================ */
-billSchema.pre('validate', async function () {
-  if (this.isNew && !this.billNumber) {
-    try {
-      const date = new Date();
-      const year = date.getFullYear();
-      const month = String(date.getMonth() + 1).padStart(2, '0');
-      const day = String(date.getDate()).padStart(2, '0');
+}, { timestamps: true });
 
-      const dateStr = `${year}${month}${day}`;
 
-      const Bill = this.constructor;
-
-      const lastBill = await Bill.findOne({
-        billNumber: { $regex: `^INV-${dateStr}-`, $options: 'i' }
-      }).sort({ billNumber: -1 });
-
-      let sequence = 1;
-
-      if (lastBill && lastBill.billNumber) {
-        const parts = lastBill.billNumber.split('-');
-
-        if (parts.length === 3) {
-          const lastSequence = parseInt(parts[2]);
-
-          if (!isNaN(lastSequence)) {
-            sequence = lastSequence + 1;
-          }
-        }
-      }
-
-      this.billNumber = `INV-${dateStr}-${String(sequence).padStart(4, '0')}`;
-
-      console.log('Generated bill number:', this.billNumber);
-
-    } catch (error) {
-      console.error('Bill number generation failed:', error);
-
-      // fallback
-      this.billNumber = `INV-${Date.now()}`;
-    }
-  }
-});
-
-/* ================================
-   UPDATE TIMESTAMP ON SAVE
-================================ */
+// ✅ TOTAL CALCULATION (NO next)
 billSchema.pre('save', function () {
-  this.updatedAt = new Date();
+  this.items = this.items.map(item => ({
+    ...item.toObject(),
+    total: item.quantity * item.price
+  }));
+
+  this.subtotal = this.items.reduce((sum, i) => sum + i.total, 0);
+  this.discountAmount = (this.subtotal * this.discount) / 100;
+  this.total = this.subtotal - this.discountAmount;
 });
 
-/* ================================
-   UPDATE TIMESTAMP ON UPDATE
-================================ */
-billSchema.pre('findOneAndUpdate', function () {
-  this.set({ updatedAt: new Date() });
+
+// ✅ BILL NUMBER (ASYNC, NO next)
+billSchema.pre('save', async function () {
+  if (!this.billNumber) {
+    const count = await mongoose.model('Bill').countDocuments();
+    this.billNumber = `BILL-${1000 + count}`;
+  }
 });
 
-/* ================================
-   INDEXES
-================================ */
-billSchema.index({ transactionDate: -1 });
-billSchema.index({ status: 1, transactionDate: -1 });
-billSchema.index({ 'customer.customerId': 1, transactionDate: -1 });
-
-/* ================================
-   EXPORT MODEL
-================================ */
 module.exports = mongoose.model('Bill', billSchema);
