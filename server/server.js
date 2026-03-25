@@ -9,7 +9,7 @@ const brandRoutes = require("./routes/brandRoutes");
 const uomRoutes = require("./routes/uomRoutes");
 const productRoutes = require("./routes/productRoutes");
 const billRoutes = require('./routes/billRoutes');
-const customerRoutes = require('./routes/customerRoutes');
+const customerRoutes = require('./routes/customerRoutes_old');
 
 const app = express();
 app.use(cors());
