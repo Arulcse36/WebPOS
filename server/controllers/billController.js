@@ -26,8 +26,7 @@ exports.createBill = async (req, res) => {
       dueAmount,
       cashPaid,
       upiPaid,
-      total,
- 
+      total, 
       customerId,
       customerName,
       customerPhone,
@@ -37,8 +36,8 @@ exports.createBill = async (req, res) => {
       notes
     } = req.body;
 
-    console.log("Create bill payload:", req.body);
 
+console.log("Create bill payload:", req.body);
     if (!items || items.length === 0) {
       throw new Error("No items in the bill");
     }
@@ -55,6 +54,8 @@ exports.createBill = async (req, res) => {
       if (product.stock < item.quantity) {
         throw new Error(`Insufficient stock for ${product.name}. Available: ${product.stock}, Requested: ${item.quantity}`);
       }
+
+
     }
 
     // ✅ Prepare items
@@ -472,7 +473,11 @@ exports.getBillById = async (req, res) => {
       updatedAt: bill.updatedAt
     };
 
+console.log("Fetched bill:", formattedBill);
+
     res.json(formattedBill);
+
+
 
   } catch (error) {
     console.error("Get bill error:", error);
@@ -596,6 +601,8 @@ exports.recordPayment = async (req, res) => {
 // ✅ DAILY SALES
 exports.getDailySales = async (req, res) => {
   try {
+
+    console.log("Calculating daily sales...");
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
@@ -702,6 +709,8 @@ exports.getReport = async (req, res) => {
       })),
       summary
     });
+
+    console.log(`Generated ${type} report from ${startDate.toISOString()} to ${endDate.toISOString()}`);
   } catch (error) {
     console.error("Report error:", error);
     res.status(500).json({

@@ -60,46 +60,225 @@ const roundToTwoDecimals = (num) => {
 
 // --- Sub-Components ---
 
-const ProductCard = React.memo(({ product, onAdd, onIncrement, onDecrement, cartQuantity }) => {
+const ProductCard = React.memo(({ product, onAdd, onUpdateQty, cartQuantity }) => {
+  const [showQtyModal, setShowQtyModal] = useState(false);
   const qty = cartQuantity || 0;
   const isOutOfStock = product.stock <= 0;
   const categoryName = getSafeString(product.category);
   const brandName = getSafeString(product.brand);
   const price = roundToTwoDecimals(product.retailRate);
+  
+  // Get stock value safely
+  const stock = product.stock !== undefined ? product.stock : Infinity;
+  
+  // Array of quantity options (decimal values for bulk selection)
+  const quantityOptions = [0.05, 0.10, 0.15, 0.20, 0.25, 0.50, 0.75];
+  
+  // Handle quantity selection from modal
+  const handleQuantitySelect = (selectedQty) => {
+    if (selectedQty <= stock) {
+      onUpdateQty(product._id, selectedQty, stock);
+    } else {
+      alert(`Cannot add more than ${stock} units of this product`);
+    }
+    setShowQtyModal(false);
+  };
+  
+  // Handle increment by 1 (whole number)
+  const handleIncrement = () => {
+    const newQty = Math.round((qty + 1) * 1000) / 1000;
+    if (newQty <= stock) {
+      onUpdateQty(product._id, newQty, stock);
+    } else {
+      alert(`Cannot exceed stock limit of ${stock}`);
+    }
+  };
+  
+  // Handle decrement by 1 (whole number)
+  const handleDecrement = () => {
+    const newQty = Math.round((qty - 1) * 1000) / 1000;
+    // If new quantity would be less than 0.05 (minimum selectable quantity), remove the item
+    if (newQty < 0.05) {
+      onUpdateQty(product._id, 0, stock);
+    } else if (newQty >= 0) {
+      onUpdateQty(product._id, newQty, stock);
+    }
+  };
 
   return (
-    <div className={`p-3 rounded-lg transition-all border ${isOutOfStock ? 'bg-gray-200 opacity-60 border-transparent' : 'bg-white shadow-sm hover:shadow-md border-gray-200 hover:border-blue-400'
-      }`}>
-      <div className="mb-2">
-        <div className="font-bold text-gray-900 text-sm leading-tight h-10 overflow-hidden">{product.name}</div>
-        <div className="text-base font-black text-blue-700 mt-1">{formatCurrency(price)}</div>
-        <div className={`text-xs mt-1 font-bold ${product.stock <= 5 ? 'text-red-600' : 'text-gray-500'}`}>
-          STOCK: {product.stock}
+    <>
+      <div className={`p-3 rounded-lg transition-all border ${isOutOfStock ? 'bg-gray-200 opacity-60 border-transparent' : 'bg-white shadow-sm hover:shadow-md border-gray-200 hover:border-blue-400'
+        }`}>
+        <div className="mb-2">
+          <div className="font-bold text-gray-900 text-sm leading-tight h-10 overflow-hidden">{product.name}</div>
+          <div className="text-base font-black text-blue-700 mt-1">{formatCurrency(price)}</div>
+          <div className={`text-xs mt-1 font-bold ${product.stock <= 5 ? 'text-red-600' : 'text-gray-500'}`}>
+            STOCK: {product.stock !== undefined ? product.stock : 'Unlimited'}
+          </div>
+          {categoryName && (
+            <div className="text-xs text-gray-400 mt-1">📁 {categoryName}</div>
+          )}
+          {brandName && (
+            <div className="text-xs text-gray-400">🏷️ {brandName}</div>
+          )}
         </div>
-        {categoryName && (
-          <div className="text-xs text-gray-400 mt-1">📁 {categoryName}</div>
-        )}
-        {brandName && (
-          <div className="text-xs text-gray-400">🏷️ {brandName}</div>
+
+        {isOutOfStock ? (
+          <button disabled className="w-full bg-gray-400 text-white py-2 rounded-lg font-bold cursor-not-allowed uppercase text-xs">Out of Stock</button>
+        ) : (
+          <div className="flex items-center justify-between gap-2 mt-2">
+            {qty > 0 ? (
+              <>
+                <button 
+                  onClick={handleDecrement} 
+                  className="bg-red-500 hover:bg-red-600 text-white font-black rounded-lg text-lg shadow-sm flex-shrink-0 w-8 h-8 min-w-[2rem] min-h-[2rem]"
+                >
+                  -
+                </button>
+                
+                {/* Clickable quantity display */}
+                <div className="flex-1 text-center min-w-[70px]">
+                  <button
+                    onClick={() => setShowQtyModal(true)}
+                    className="text-xl font-black text-black hover:bg-gray-100 px-2 py-1 rounded-lg transition-colors w-full"
+                  >
+                    {qty.toFixed(3)}
+                  </button>
+                </div>
+                
+                <button 
+                  onClick={handleIncrement} 
+                  className="bg-green-500 hover:bg-green-600 text-white font-black rounded-lg text-lg shadow-sm flex-shrink-0 w-8 h-8 min-w-[2rem] min-h-[2rem]" 
+                  disabled={qty >= stock}
+                >
+                  +
+                </button>
+              </>
+            ) : (
+              <button 
+                onClick={() => onAdd(product)} 
+                className="w-full bg-blue-600 hover:bg-blue-700 text-white py-2 rounded-lg font-bold shadow-md transition-transform active:scale-95 text-xs uppercase"
+              >
+                ADD TO CART
+              </button>
+            )}
+          </div>
         )}
       </div>
 
-      {isOutOfStock ? (
-        <button disabled className="w-full bg-gray-400 text-white py-2 rounded-lg font-bold cursor-not-allowed uppercase text-xs">Out of Stock</button>
-      ) : (
-        <div className="flex items-center justify-between gap-2 mt-2">
-          {qty > 0 ? (
-            <>
-              <button onClick={() => onDecrement(product._id, qty)} className="bg-red-500 hover:bg-red-600 text-white font-black w-8 h-8 rounded-lg text-lg shadow-sm">-</button>
-              <div className="flex-1 text-center"><span className="text-xl font-black text-black">{qty}</span></div>
-              <button onClick={() => onIncrement(product._id, qty, product.stock)} className="bg-green-500 hover:bg-green-600 text-white font-black w-8 h-8 rounded-lg text-lg shadow-sm" disabled={qty >= product.stock}>+</button>
-            </>
-          ) : (
-            <button onClick={() => onAdd(product)} className="w-full bg-blue-600 hover:bg-blue-700 text-white py-2 rounded-lg font-bold shadow-md transition-transform active:scale-95 text-xs uppercase">ADD TO CART</button>
-          )}
+      {/* Quantity Selection Modal */}
+      {showQtyModal && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={() => setShowQtyModal(false)}>
+          <div className="bg-white rounded-xl max-w-md w-full max-h-[80vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
+            {/* Modal Header */}
+            <div className="p-4 border-b flex justify-between items-center">
+              <div>
+                <h3 className="font-bold text-lg text-gray-900">Select Quantity</h3>
+                <p className="text-xs text-gray-500 mt-1">{product.name}</p>
+              </div>
+              <button
+                onClick={() => setShowQtyModal(false)}
+                className="text-gray-500 hover:text-gray-700 text-2xl leading-none"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="flex-1 overflow-y-auto p-4">
+              {/* Current quantity display */}
+              <div className="bg-blue-50 rounded-lg p-4 mb-4 text-center">
+                <div className="text-xs text-blue-600 font-bold mb-1">CURRENT QUANTITY</div>
+                <div className="text-3xl font-black text-blue-700">{qty.toFixed(3)}</div>
+              </div>
+
+              {/* Quick select options */}
+              <div className="mb-4">
+                <div className="text-xs font-bold text-gray-600 mb-2 uppercase tracking-wide">Quick Select</div>
+                <div className="grid grid-cols-3 gap-2">
+                  {quantityOptions.map((option) => (
+                    <button
+                      key={option}
+                      onClick={() => handleQuantitySelect(option)}
+                      disabled={option > stock}
+                      className={`
+                        py-3 px-2 rounded-lg font-bold text-sm transition-all
+                        ${option > stock 
+                          ? 'bg-gray-100 text-gray-400 cursor-not-allowed' 
+                          : 'bg-gray-100 hover:bg-blue-100 text-gray-700 hover:text-blue-700'
+                        }
+                        ${Math.abs(option - qty) < 0.001 ? 'ring-2 ring-blue-500 bg-blue-100 text-blue-700' : ''}
+                      `}
+                    >
+                      {option.toFixed(3)}
+                      {option > stock && (
+                        <span className="block text-[10px]">Out of stock</span>
+                      )}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Custom quantity input */}
+              <div className="mb-4">
+                <div className="text-xs font-bold text-gray-600 mb-2 uppercase tracking-wide">Custom Quantity</div>
+                <div className="flex gap-2">
+                  <input
+                    type="number"
+                    id="customQty"
+                    step="0.001"
+                    min="0"
+                    max={stock}
+                    placeholder="Enter quantity"
+                    className="flex-1 p-2 border border-gray-300 rounded-lg focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none text-sm"
+                  />
+                  <button
+                    onClick={() => {
+                      const customQty = parseFloat(document.getElementById('customQty').value);
+                      if (!isNaN(customQty) && customQty > 0) {
+                        if (customQty <= stock) {
+                          onUpdateQty(product._id, customQty, stock);
+                          setShowQtyModal(false);
+                        } else {
+                          alert(`Cannot add more than ${stock} units`);
+                        }
+                      } else if (customQty === 0) {
+                        onUpdateQty(product._id, 0, stock);
+                        setShowQtyModal(false);
+                      } else {
+                        alert('Please enter a valid quantity');
+                      }
+                    }}
+                    className="px-4 py-2 bg-blue-600 text-white rounded-lg font-bold text-sm hover:bg-blue-700 transition-colors"
+                  >
+                    Apply
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="p-4 border-t flex gap-2">
+              <button
+                onClick={() => {
+                  onUpdateQty(product._id, 0, stock);
+                  setShowQtyModal(false);
+                }}
+                className="flex-1 bg-red-500 text-white py-2 rounded-lg font-bold text-sm hover:bg-red-600 transition-colors"
+              >
+                Remove Item
+              </button>
+              <button
+                onClick={() => setShowQtyModal(false)}
+                className="flex-1 bg-gray-200 text-gray-700 py-2 rounded-lg font-bold text-sm hover:bg-gray-300 transition-colors"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
         </div>
       )}
-    </div>
+    </>
   );
 });
 
@@ -109,6 +288,7 @@ const POS = () => {
   const { id: billId } = useParams(); // Get bill ID from URL if editing
   const navigate = useNavigate();
   const [isEditMode, setIsEditMode] = useState(false);
+  const [billNumber, setBillNumber] = useState(""); // State to store bill number
   
   const [products, setProducts] = useState([]);
   const [search, setSearch] = useState("");
@@ -146,7 +326,7 @@ const POS = () => {
   const [dueAmount, setDueAmount] = useState(0);
   const [creditType, setCreditType] = useState("full");
 
-  // Mobile UI State
+  // Mobile UI State - Cart drawer is hidden by default
   const [isCartOpen, setIsCartOpen] = useState(false);
 
   // Current date and time display (editable)
@@ -173,6 +353,9 @@ const POS = () => {
         try {
           const response = await axios.get(`${API}/bills/${billId}`);
           const bill = response.data;
+          
+          // Store the bill number
+          setBillNumber(bill.billNumber || bill.id || "N/A");
           
           // Populate cart items
           const cartItems = bill.items.map(item => ({
@@ -229,7 +412,7 @@ const POS = () => {
     setIsEditingDate(false);
   };
 
-  // Function to close cart (works for both mobile and desktop)
+  // Function to close cart
   const closeCart = useCallback(() => {
     setIsCartOpen(false);
   }, []);
@@ -435,12 +618,24 @@ const POS = () => {
   const removeItem = useCallback((id) => setCart(prev => prev.filter(i => i.product !== id)), []);
 
   const updateQty = useCallback((id, newQty, stock) => {
-    if (newQty < 1) return removeItem(id);
-    if (stock !== 0 && newQty > stock) return;
+    // Round to 3 decimal places to handle floating point precision
+    const roundedQty = Math.round(newQty * 1000) / 1000;
+    
+    // Remove item if quantity is 0 or less
+    if (roundedQty <= 0) {
+      return removeItem(id);
+    }
+    
+    // Check stock availability (if stock is defined)
+    if (stock !== undefined && stock !== null && roundedQty > stock) {
+      alert(`Cannot add more than ${stock} units of this product`);
+      return;
+    }
+    
     setCart(prev => prev.map(item => {
       if (item.product === id) {
-        const newTotal = roundToTwoDecimals(newQty * item.price);
-        return { ...item, qty: newQty, total: newTotal };
+        const newTotal = roundToTwoDecimals(roundedQty * item.price);
+        return { ...item, qty: roundedQty, total: newTotal };
       }
       return item;
     }));
@@ -448,11 +643,20 @@ const POS = () => {
 
   const handleAddToCart = useCallback((product) => {
     const price = roundToTwoDecimals(product.retailRate);
+    const incrementValue = 1; // Changed from 0.05 to 1
+    
     setCart(prev => {
       const existing = prev.find(i => i.product === product._id);
       if (existing) {
-        if (existing.qty >= product.stock) return prev;
-        const newQty = existing.qty + 1;
+        if (existing.qty >= product.stock) {
+          alert(`Cannot add more ${product.name}. Only ${product.stock} in stock.`);
+          return prev;
+        }
+        const newQty = roundToTwoDecimals(existing.qty + incrementValue);
+        if (newQty > product.stock) {
+          alert(`Cannot exceed stock limit of ${product.stock}`);
+          return prev;
+        }
         const newTotal = roundToTwoDecimals(newQty * price);
         return prev.map(i => i.product === product._id ? { ...i, qty: newQty, total: newTotal } : i);
       }
@@ -460,8 +664,8 @@ const POS = () => {
         product: product._id,
         name: product.name,
         price: price,
-        qty: 1,
-        total: price
+        qty: incrementValue, // Start with 1 instead of 0.05
+        total: roundToTwoDecimals(price * incrementValue)
       }];
     });
   }, []);
@@ -573,6 +777,9 @@ const POS = () => {
 
       if (res.data.success) {
         let message = isEditMode ? `Bill Updated Successfully!\n` : `Transaction Successful!\n`;
+        if (isEditMode) {
+          message += `Bill #${billNumber}\n`;
+        }
         message += `Bill Date: ${formatDateTime(billDate)}\n`;
         message += `Payment Method: ${finalPaymentMethod.toUpperCase()}\n`;
         if (finalPaymentMethod === 'credit') {
@@ -613,7 +820,7 @@ const POS = () => {
     } finally {
       setCheckoutLoading(false);
     }
-  }, [cart, discountAmount, paymentMethod, total, selectedCustomer, fetchProducts, closeCart, billDate, isEditMode, billId, navigate]);
+  }, [cart, discountAmount, paymentMethod, total, selectedCustomer, fetchProducts, closeCart, billDate, isEditMode, billId, navigate, billNumber]);
 
   // Credit payment handlers
   const handleFullCredit = useCallback(() => {
@@ -760,11 +967,11 @@ const POS = () => {
   };
 
   return (
-    <div className="relative flex flex-col md:flex-row h-screen bg-gray-50 text-black overflow-hidden">
+    <div className="relative flex flex-col h-screen bg-gray-50 text-black overflow-hidden">
       {/* Edit Mode Banner */}
       {isEditMode && (
         <div className="fixed top-0 left-0 right-0 bg-yellow-500 text-black text-center py-2 font-bold z-50">
-          ✏️ EDITING BILL #{billId} - Make your changes and click "UPDATE BILL"
+          ✏️ EDITING BILL #{billNumber} - Make your changes and click "UPDATE BILL"
         </div>
       )}
 
@@ -945,7 +1152,7 @@ const POS = () => {
         </div>
       )}
 
-      {/* Mobile Header */}
+      {/* Mobile Header with Cart Button */}
       <div className="md:hidden flex justify-between items-center p-3 bg-white border-b shadow-sm z-20">
         <h1 className="font-bold text-base">POS SYSTEM {isEditMode && '(EDIT MODE)'}</h1>
         <button
@@ -956,11 +1163,22 @@ const POS = () => {
         </button>
       </div>
 
+      {/* Desktop Header with Cart Button */}
+      <div className="hidden md:flex justify-between items-center p-4 bg-white border-b shadow-sm z-20">
+        <h1 className="font-bold text-lg">POS SYSTEM {isEditMode && '(EDIT MODE)'}</h1>
+        <button
+          onClick={openCart}
+          className="relative px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-bold shadow-md hover:bg-blue-700 transition-colors"
+        >
+          🛒 VIEW CART ({totalItemCount})
+        </button>
+      </div>
+
       {/* Product Area */}
-      <div className="flex-1 p-3 md:p-4 overflow-y-auto mt-0 md:mt-0">
+      <div className="flex-1 overflow-y-auto p-3 md:p-4">
         {isEditMode && (
           <div className="mb-3 p-2 bg-yellow-100 border border-yellow-300 rounded-lg text-sm text-yellow-800">
-            Editing bill #{billId} - Modify items, discount, or customer details
+            Editing bill #{billNumber} - Modify items, discount, or customer details
           </div>
         )}
         
@@ -1032,8 +1250,7 @@ const POS = () => {
                   key={p._id}
                   product={p}
                   onAdd={handleAddToCart}
-                  onIncrement={(id, q, s) => updateQty(id, q + 1, s)}
-                  onDecrement={(id, q) => updateQty(id, q - 1, 0)}
+                  onUpdateQty={updateQty}
                   cartQuantity={cart.find(i => i.product === p._id)?.qty}
                 />
               ))}
@@ -1047,219 +1264,223 @@ const POS = () => {
         )}
       </div>
 
-      {/* Mobile Overlay */}
+      {/* Cart Overlay */}
       {isCartOpen && (
         <div
-          className="fixed inset-0 bg-black/50 z-30 md:hidden transition-opacity"
+          className="fixed inset-0 bg-black/50 z-30 transition-opacity"
           onClick={closeCart}
         />
       )}
 
-      {/* Cart Sidebar / Drawer */}
-      <div className={`
-        fixed top-0 right-0 bottom-0 z-40 w-[90%] max-w-[380px] bg-white shadow-2xl transition-transform duration-300 transform overflow-hidden
-        md:relative md:translate-x-0 md:w-2/5 md:z-auto md:border-l md:flex
-        ${isCartOpen ? "translate-x-0" : "translate-x-full md:translate-x-0"}
-      `}>
-        <div className="flex flex-col h-full w-full">
-          {/* Cart Header with Editable Date/Time */}
-          <div className="bg-gray-50 border-b">
-            <div className="flex justify-between items-center p-4 gap-3">
-              <div className="flex-1 min-w-0">
-                <h2 className="text-sm md:text-base font-bold text-black uppercase tracking-wider">
-                  {isEditMode ? '✏️ EDIT BILL' : '🧾 Bill Summary'}
-                </h2>
-                <div className="flex items-center gap-2 mt-1">
-                  {isEditingDate ? (
-                    <input
-                      ref={dateInputRef}
-                      type="datetime-local"
-                      value={billDate}
-                      onChange={handleDateChange}
-                      onBlur={handleDateBlur}
-                      className="text-xs text-gray-600 font-mono border border-gray-300 rounded px-1 py-0.5 focus:border-blue-500 outline-none"
-                      autoFocus
-                    />
-                  ) : (
-                    <div
-                      className="text-xs text-gray-600 font-mono cursor-pointer hover:text-blue-600 hover:underline flex items-center gap-1"
-                      onClick={handleEditDateClick}
-                    >
-                      📅 {currentDateTime}
-                      <span className="text-blue-500 text-xs">✎</span>
-                    </div>
-                  )}
-                </div>
-              </div>
-              <button
-                onClick={closeCart}
-                className="bg-red-500 hover:bg-red-600 text-white rounded-lg font-bold transition-colors shadow-md active:scale-95 whitespace-nowrap flex-shrink-0 px-4 py-2 text-sm"
-                aria-label="Close cart"
-              >
-                ✕ CLOSE
-              </button>
-            </div>
-          </div>
-
-          {/* Cart Items List */}
-          <div className="flex-1 overflow-y-auto p-3 space-y-2 bg-white">
-            {cart.length === 0 ? (
-              <div className="h-full flex flex-col items-center justify-center opacity-40">
-                <span className="text-3xl mb-2">🛍️</span>
-                <p className="font-bold text-sm text-black uppercase">No items in cart</p>
-              </div>
+{/* Cart Drawer */}
+<div className={`
+  fixed top-0 right-0 bottom-0 z-50 w-[90%] max-w-[380px] bg-white shadow-2xl transition-transform duration-300 transform overflow-hidden
+  ${isCartOpen ? "translate-x-0" : "translate-x-full"}
+`}>
+  <div className="flex flex-col h-full w-full relative">
+    {/* Cart Header with Editable Date/Time */}
+    <div className="bg-gray-50 border-b sticky top-0 z-10">
+      <div className="flex justify-between items-center p-4 gap-3">
+        <div className="flex-1 min-w-0">
+          <h2 className="text-sm md:text-base font-bold text-black uppercase tracking-wider">
+            {isEditMode ? '✏️ EDIT BILL' : '🧾 Bill Summary'}
+          </h2>
+          <div className="flex items-center gap-2 mt-1">
+            {isEditingDate ? (
+              <input
+                ref={dateInputRef}
+                type="datetime-local"
+                value={billDate}
+                onChange={handleDateChange}
+                onBlur={handleDateBlur}
+                className="text-xs text-gray-600 font-mono border border-gray-300 rounded px-1 py-0.5 focus:border-blue-500 outline-none"
+                autoFocus
+              />
             ) : (
-              cart.map(item => (
-                <div key={`cart-${item.product}`} className="bg-gray-50 rounded-lg p-3 border border-gray-200">
-                  <div className="flex justify-between items-start mb-1">
-                    <h3 className="text-sm font-bold text-black leading-tight flex-1 pr-2">{item.name}</h3>
-                    <button onClick={() => removeItem(item.product)} className="text-red-500 font-bold text-sm hover:text-red-700 flex-shrink-0">✕</button>
-                  </div>
-                  <div className="flex justify-between items-end mt-2">
-                    <div className="flex items-center gap-2">
-                      <span className="bg-blue-600 text-white font-bold px-2 py-0.5 rounded text-xs">x{item.qty}</span>
-                      <span className="text-gray-600 text-xs">@ {formatCurrency(item.price)}</span>
-                    </div>
-                    <div className="text-base font-bold text-black">{formatCurrency(item.total)}</div>
-                  </div>
-                </div>
-              ))
+              <div
+                className="text-xs text-gray-600 font-mono cursor-pointer hover:text-blue-600 hover:underline flex items-center gap-1"
+                onClick={handleEditDateClick}
+              >
+                📅 {currentDateTime}
+                <span className="text-blue-500 text-xs">✎</span>
+              </div>
             )}
           </div>
+        </div>
+        <button
+          onClick={closeCart}
+          className="bg-red-500 hover:bg-red-600 text-white rounded-lg font-bold transition-colors shadow-md active:scale-95 whitespace-nowrap flex-shrink-0 px-4 py-2 text-sm z-20 relative"
+          aria-label="Close cart"
+        >
+          ✕ CLOSE
+        </button>
+      </div>
+    </div>
 
-          {/* Billing Footer */}
-          <div className="p-4 bg-gray-50 border-t space-y-3">
-            {/* Customer Selection Section */}
-            <div className="space-y-2">
-              <div className="flex justify-between items-center">
-                <span className="text-xs font-bold text-black">CUSTOMER</span>
-                {!selectedCustomer && (
-                  <button
-                    onClick={() => setShowCustomerModal(true)}
-                    className="text-xs bg-blue-600 text-white px-2 py-1 rounded font-bold"
-                  >
-                    + ADD CUSTOMER
-                  </button>
-                )}
-              </div>
-
-              {selectedCustomer ? (
-                <div className="bg-blue-50 border border-blue-200 rounded-lg p-2">
-                  <div className="flex justify-between items-start">
-                    <div>
-                      <div className="font-bold text-sm text-blue-900">{selectedCustomer.name}</div>
-                      {selectedCustomer.phone && (
-                        <div className="text-xs text-blue-700">📞 {selectedCustomer.phone}</div>
-                      )}
-                      {selectedCustomer.email && (
-                        <div className="text-xs text-blue-700">✉️ {selectedCustomer.email}</div>
-                      )}
-                      {selectedCustomer._id && (
-                        <div className="text-xs text-green-600 mt-1">✓ Registered Customer</div>
-                      )}
-                    </div>
-                    <button
-                      onClick={handleRemoveCustomer}
-                      className="text-red-500 text-xs font-bold hover:text-red-700"
-                    >
-                      Change
-                    </button>
-                  </div>
-                </div>
-              ) : (
-                <div className="bg-gray-100 border border-gray-200 rounded-lg p-2 text-center">
-                  <span className="text-xs text-gray-600">Walk-in Customer</span>
-                  <div className="text-xs text-orange-500 mt-1">⚠️ Credit not available</div>
-                </div>
-              )}
-            </div>
-
-            <div className="space-y-2">
-              <div className="flex justify-between text-gray-600 text-xs font-bold uppercase">
-                <span>Subtotal</span>
-                <span>{formatCurrency(subtotal)}</span>
-              </div>
-
-              {/* Discount with +/- buttons */}
-              <div className="flex items-center justify-between gap-3">
-                <span className="text-xs font-bold text-black">DISCOUNT %</span>
-                <div className="flex items-center gap-1">
-                  <button
-                    onClick={decrementDiscount}
-                    disabled={discount <= 0}
-                    className="bg-red-500 hover:bg-red-600 disabled:bg-gray-300 text-white font-bold w-6 h-6 rounded text-sm"
-                  >
-                    -
-                  </button>
-                  <input
-                    type="number"
-                    className="w-14 p-1 border border-gray-300 rounded text-center text-sm font-bold text-black outline-none focus:border-blue-500"
-                    value={discount}
-                    onChange={handleDiscountChange}
-                    step="1"
-                    min="0"
-                    max="100"
-                  />
-                  <button
-                    onClick={incrementDiscount}
-                    disabled={discount >= 100}
-                    className="bg-green-500 hover:bg-green-600 disabled:bg-gray-300 text-white font-bold w-6 h-6 rounded text-sm"
-                  >
-                    +
-                  </button>
-                  <span className="text-xs font-bold text-gray-600">%</span>
-                </div>
-              </div>
-
-              {/* Payment Method as Buttons */}
-              <div className="space-y-1">
-                <span className="text-xs font-bold text-black block">PAYMENT</span>
-                <div className="grid grid-cols-2 md:grid-cols-3 gap-1.5">
-                  {getAvailablePaymentMethods.map(method => (
-                    <button
-                      key={`payment-${method.id}`}
-                      onClick={() => setPaymentMethod(method.id)}
-                      className={`py-1.5 px-2 rounded-lg text-xs font-bold text-white transition-all ${paymentMethod === method.id
-                        ? `${method.color} ring-1 ring-offset-1 ring-blue-500`
-                        : 'bg-gray-400 hover:bg-gray-500'
-                        }`}
-                    >
-                      {method.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </div>
-
-            <div className="pt-3 border-t border-gray-300">
-              {/* Total Items */}
-              <div className="flex justify-between items-center mb-1">
-                <span className="text-xs font-bold text-gray-500 uppercase">Total Items</span>
-                <span className="text-sm font-bold text-black">{totalItemCount}</span>
-              </div>
-
-              {/* Net Amount */}
-              <div className="flex justify-between items-center mb-3">
-                <span className="text-xs font-bold text-gray-400 uppercase">Net Amount</span>
-                <span className="text-xl font-bold text-blue-700">{formatCurrency(total)}</span>
-              </div>
-
-              {/* Checkout/Update Button */}
-              <button
-                disabled={checkoutLoading || cart.length === 0 || (paymentMethod === 'credit' && !isRegisteredCustomer)}
-                onClick={checkout}
-                className={`w-full text-white py-2.5 rounded-xl font-bold text-sm shadow-md active:scale-95 disabled:bg-gray-400 transition-all ${paymentMethod === 'credit' && isRegisteredCustomer ? 'bg-orange-600 hover:bg-orange-700' : 'bg-blue-700 hover:bg-blue-800'
-                  }`}
+    {/* Cart Items List */}
+    <div className="flex-1 overflow-y-auto p-3 space-y-2 bg-white">
+      {cart.length === 0 ? (
+        <div className="h-full flex flex-col items-center justify-center opacity-40">
+          <span className="text-3xl mb-2">🛍️</span>
+          <p className="font-bold text-sm text-black uppercase">No items in cart</p>
+        </div>
+      ) : (
+        cart.map(item => (
+          <div key={`cart-${item.product}`} className="bg-gray-50 rounded-lg p-3 border border-gray-200">
+            <div className="flex justify-between items-start mb-1">
+              <h3 className="text-sm font-bold text-black leading-tight flex-1 pr-2">{item.name}</h3>
+              <button 
+                onClick={() => removeItem(item.product)} 
+                className="text-red-500 font-bold text-sm hover:text-red-700 flex-shrink-0 ml-2"
               >
-                {checkoutLoading ? "PROCESSING..." :
-                  paymentMethod === 'credit' && !isRegisteredCustomer ? "ADD CUSTOMER FOR CREDIT" :
-                    paymentMethod === 'credit' ? "PROCESS CREDIT PAYMENT" :
-                      isEditMode ? "UPDATE BILL" : "FINISH ORDER"}
+                ✕
               </button>
             </div>
+            <div className="flex justify-between items-end mt-2">
+              <div className="flex items-center gap-2">
+                <span className="bg-blue-600 text-white font-bold px-2 py-0.5 rounded text-xs">x{item.qty}</span>
+                <span className="text-gray-600 text-xs">@ {formatCurrency(item.price)}</span>
+              </div>
+              <div className="text-base font-bold text-black">{formatCurrency(item.total)}</div>
+            </div>
+          </div>
+        ))
+      )}
+    </div>
+
+    {/* Billing Footer */}
+    <div className="p-4 bg-gray-50 border-t sticky bottom-0 z-10">
+      {/* Customer Selection Section */}
+      <div className="space-y-2">
+        <div className="flex justify-between items-center">
+          <span className="text-xs font-bold text-black">CUSTOMER</span>
+          {!selectedCustomer && (
+            <button
+              onClick={() => setShowCustomerModal(true)}
+              className="text-xs bg-blue-600 text-white px-2 py-1 rounded font-bold"
+            >
+              + ADD CUSTOMER
+            </button>
+          )}
+        </div>
+
+        {selectedCustomer ? (
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-2">
+            <div className="flex justify-between items-start">
+              <div>
+                <div className="font-bold text-sm text-blue-900">{selectedCustomer.name}</div>
+                {selectedCustomer.phone && (
+                  <div className="text-xs text-blue-700">📞 {selectedCustomer.phone}</div>
+                )}
+                {selectedCustomer.email && (
+                  <div className="text-xs text-blue-700">✉️ {selectedCustomer.email}</div>
+                )}
+                {selectedCustomer._id && (
+                  <div className="text-xs text-green-600 mt-1">✓ Registered Customer</div>
+                )}
+              </div>
+              <button
+                onClick={handleRemoveCustomer}
+                className="text-red-500 text-xs font-bold hover:text-red-700"
+              >
+                Change
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="bg-gray-100 border border-gray-200 rounded-lg p-2 text-center">
+            <span className="text-xs text-gray-600">Walk-in Customer</span>
+            <div className="text-xs text-orange-500 mt-1">⚠️ Credit not available</div>
+          </div>
+        )}
+      </div>
+
+      <div className="space-y-2 mt-3">
+        <div className="flex justify-between text-gray-600 text-xs font-bold uppercase">
+          <span>Subtotal</span>
+          <span>{formatCurrency(subtotal)}</span>
+        </div>
+
+        {/* Discount with +/- buttons */}
+        <div className="flex items-center justify-between gap-3">
+          <span className="text-xs font-bold text-black">DISCOUNT %</span>
+          <div className="flex items-center gap-1">
+            <button
+              onClick={decrementDiscount}
+              disabled={discount <= 0}
+              className="bg-red-500 hover:bg-red-600 disabled:bg-gray-300 text-white font-bold w-6 h-6 rounded text-sm"
+            >
+              -
+            </button>
+            <input
+              type="number"
+              className="w-14 p-1 border border-gray-300 rounded text-center text-sm font-bold text-black outline-none focus:border-blue-500"
+              value={discount}
+              onChange={handleDiscountChange}
+              step="1"
+              min="0"
+              max="100"
+            />
+            <button
+              onClick={incrementDiscount}
+              disabled={discount >= 100}
+              className="bg-green-500 hover:bg-green-600 disabled:bg-gray-300 text-white font-bold w-6 h-6 rounded text-sm"
+            >
+              +
+            </button>
+            <span className="text-xs font-bold text-gray-600">%</span>
+          </div>
+        </div>
+
+        {/* Payment Method as Buttons */}
+        <div className="space-y-1">
+          <span className="text-xs font-bold text-black block">PAYMENT</span>
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-1.5">
+            {getAvailablePaymentMethods.map(method => (
+              <button
+                key={`payment-${method.id}`}
+                onClick={() => setPaymentMethod(method.id)}
+                className={`py-1.5 px-2 rounded-lg text-xs font-bold text-white transition-all ${paymentMethod === method.id
+                  ? `${method.color} ring-1 ring-offset-1 ring-blue-500`
+                  : 'bg-gray-400 hover:bg-gray-500'
+                  }`}
+              >
+                {method.label}
+              </button>
+            ))}
           </div>
         </div>
       </div>
+
+      <div className="pt-3 mt-3 border-t border-gray-300">
+        {/* Total Items */}
+        <div className="flex justify-between items-center mb-1">
+          <span className="text-xs font-bold text-gray-500 uppercase">Total Items</span>
+          <span className="text-sm font-bold text-black">{totalItemCount}</span>
+        </div>
+
+        {/* Net Amount */}
+        <div className="flex justify-between items-center mb-3">
+          <span className="text-xs font-bold text-gray-400 uppercase">Net Amount</span>
+          <span className="text-xl font-bold text-blue-700">{formatCurrency(total)}</span>
+        </div>
+
+        {/* Checkout/Update Button */}
+        <button
+          disabled={checkoutLoading || cart.length === 0 || (paymentMethod === 'credit' && !isRegisteredCustomer)}
+          onClick={checkout}
+          className={`w-full text-white py-2.5 rounded-xl font-bold text-sm shadow-md active:scale-95 disabled:bg-gray-400 transition-all ${paymentMethod === 'credit' && isRegisteredCustomer ? 'bg-orange-600 hover:bg-orange-700' : 'bg-blue-700 hover:bg-blue-800'
+            }`}
+        >
+          {checkoutLoading ? "PROCESSING..." :
+            paymentMethod === 'credit' && !isRegisteredCustomer ? "ADD CUSTOMER FOR CREDIT" :
+              paymentMethod === 'credit' ? "PROCESS CREDIT PAYMENT" :
+                isEditMode ? "UPDATE BILL" : "FINISH ORDER"}
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
     </div>
   );
 };

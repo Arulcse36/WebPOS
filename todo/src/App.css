@@ -1,0 +1,14 @@
+/* Mobile + Tablet layout */
+@media (max-width: 1024px) {
+  .pos-container {
+    flex-direction: column;
+  }
+
+  .product-list {
+    width: 100%;
+  }
+
+  .bill-section {
+    width: 100%;
+  }
+}

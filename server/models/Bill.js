@@ -13,7 +13,7 @@ const billItemSchema = new mongoose.Schema({
   quantity: {
     type: Number,
     required: true,
-    min: 1
+    min: .005
   },
   price: {
     type: Number,
@@ -95,12 +95,5 @@ billSchema.pre('save', function () {
 });
 
 
-// ✅ BILL NUMBER (ASYNC, NO next)
-billSchema.pre('save', async function () {
-  if (!this.billNumber) {
-    const count = await mongoose.model('Bill').countDocuments();
-    this.billNumber = `BILL-${1000 + count}`;
-  }
-});
 
 module.exports = mongoose.model('Bill', billSchema);
