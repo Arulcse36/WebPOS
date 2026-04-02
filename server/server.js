@@ -79,6 +79,18 @@ app.post("/billing", async (req, res) => {
 });
 
 
+// GET /bills/customers
+app.get('/bills/customers', async (req, res) => {
+  try {
+    const customers = await Bill.distinct('customer');
+    // Filter out null/undefined and sort
+    const filteredCustomers = customers.filter(c => c && c.trim() !== '').sort();
+    res.json({ success: true, customers: filteredCustomers });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
 
 // Server start
 const PORT = process.env.PORT || 5000;

@@ -1,87 +1,127 @@
+// models/Bill.js
 const mongoose = require('mongoose');
 
-const billItemSchema = new mongoose.Schema({
-  productId: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'Product',
+const paymentSchema = new mongoose.Schema({
+  amount: {
+    type: Number,
     required: true
   },
-  name: {
+  paymentMethod: {
     type: String,
+    enum: ['cash', 'upi', 'mixed','credit'],
     required: true
   },
-  quantity: {
-    type: Number,
-    required: true,
-    min: .005
+  date: {
+    type: Date,
+    default: Date.now
   },
-  price: {
-    type: Number,
-    required: true
+  transactionId: {
+    type: String,
+    default: null
   },
-  total: Number
+  notes: {
+    type: String,
+    default: ''
+  },
+  recordedBy: {
+    type: String,
+    default: 'system'
+  }
 });
 
 const billSchema = new mongoose.Schema({
   billNumber: {
     type: String,
+    required: true,
     unique: true
   },
-
-  items: [billItemSchema],
-
-  subtotal: Number,
-  discount: { type: Number, default: 0 },
-  discountAmount: Number,
-  total: Number,
-
-
-  paymentMethod: {
-    type: String,
-    enum: ['cash', 'card', 'upi', 'credit'],
+  items: [{
+    productId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Product',
+      required: true
+    },
+    name: String,
+    quantity: Number,
+    price: Number,
+    total: Number
+  }],
+  subtotal: {
+    type: Number,
     required: true
   },
-
-  paidAmount: { type: Number, default: 0 },
-  dueAmount: { type: Number, default: 0 },
-  cashPaid: { type: Number, default: 0 },
-  upiPaid: { type: Number, default: 0 },
-
+  discount: {
+    type: Number,
+    default: 0
+  },
+  discountAmount: {
+    type: Number,
+    default: 0
+  },
+  total: {
+    type: Number,
+    required: true
+  },
+  paidAmount: {
+    type: Number,
+    default: 0
+  },
+  dueAmount: {
+    type: Number,
+    default: 0
+  },
+  cashPaid: {
+    type: Number,
+    default: 0
+  },
+  upiPaid: {
+    type: Number,
+    default: 0
+  },
+  paymentMethod: {
+    type: String,
+    enum: ['cash', 'upi', 'card', 'mixed','credit'],
+    required: true
+  },
   customer: {
     customerId: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: 'Customer',
-      default: null
+      ref: 'Customer'
     },
-    name: {
-      type: String,
-      default: 'Walk-in Customer'
-    }
+    name: String,
+    phone: String,
+    email: String,
+    address: String
   },
-
-  cashier: {
-    type: String,
-    default: 'System'
-  },
-
   status: {
     type: String,
-    enum: ['completed', 'cancelled', 'refunded'],
+    enum: ['completed', 'cancelled', 'pending'],
     default: 'completed'
   },
-
-  transactionDate: {
+  billDate: {
     type: Date,
     default: Date.now
   },
-
-  billDate: {
-    type: Date
+  notes: {
+    type: String,
+    default: ''
+  },
+  cancelledAt: Date,
+  
+  // ✅ ADD PAYMENT HISTORY
+  paymentHistory: [paymentSchema],
+  
+  createdAt: {
+    type: Date,
+    default: Date.now
+  },
+  updatedAt: {
+    type: Date,
+    default: Date.now
   }
+});
 
-}, { timestamps: true });
-
-
+module.exports = mongoose.model('Bill', billSchema);
 // ✅ TOTAL CALCULATION (NO next)
 billSchema.pre('save', function () {
   this.items = this.items.map(item => ({
@@ -93,6 +133,9 @@ billSchema.pre('save', function () {
   this.discountAmount = (this.subtotal * this.discount) / 100;
   this.total = this.subtotal - this.discountAmount;
 });
+
+
+
 
 
 

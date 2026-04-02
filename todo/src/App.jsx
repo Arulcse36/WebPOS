@@ -8,8 +8,7 @@ import Product from "./pages/Product";
 import POS from "./pages/POS";
 import Customer from "./pages/Customer";
 import Report from "./pages/Report";
-
-
+import ItemsReport from './pages/ItemsReport';
 
 
 const App = () => {
@@ -29,6 +28,8 @@ const App = () => {
 
       <Route path="customer" element={<Customer />} />
       <Route path="reports" element={<Report />} />
+      <Route path="/items-report" element={<ItemsReport />} />
+      
 
     </Route>
   </Routes>

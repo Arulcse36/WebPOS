@@ -2,64 +2,15 @@ import React, { useState, useEffect, useMemo, useCallback, useRef } from "react"
 import { useParams, useNavigate } from "react-router-dom";
 import axios from "axios";
 
-// --- Custom Hooks ---
-const useDebounce = (value, delay) => {
-  const [debouncedValue, setDebouncedValue] = useState(value);
-  useEffect(() => {
-    const handler = setTimeout(() => setDebouncedValue(value), delay);
-    return () => clearTimeout(handler);
-  }, [value, delay]);
-  return debouncedValue;
-};
+import useDebounce from '../hooks/useDebounce';
+import { formatDateTime, formatForInput, formatCurrency, formatQuantityDisplay } from '../utils/formatters';
+import { roundToTwoDecimals } from '../utils/mathHelpers';
+import { getSafeString } from '../utils/productHelpers';
+import { handlePrintBill } from '../utils/printBill';
 
 const API = `${import.meta.env.VITE_API_URL}`;
 
-// Helper function to safely get string value from category/brand
-const getSafeString = (value) => {
-  if (!value) return '';
-  if (typeof value === 'string') return value;
-  if (typeof value === 'object') {
-    if (value.name) return value.name;
-    if (value._id) return value.name || '';
-    return '';
-  }
-  return String(value);
-};
-
-// Format date and time
-const formatDateTime = (date = null) => {
-  const now = date ? new Date(date) : new Date();
-  const options = {
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-    hour12: true
-  };
-  return now.toLocaleString('en-IN', options);
-};
-
-// Format currency function with 2 decimal places
-const formatCurrency = (amt) => {
-  const num = Number(amt);
-  if (isNaN(num)) return '₹0.00';
-  return new Intl.NumberFormat('en-IN', {
-    style: 'currency',
-    currency: 'INR',
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2
-  }).format(num);
-};
-
-// Round to 2 decimal places helper
-const roundToTwoDecimals = (num) => {
-  return Math.round((num + Number.EPSILON) * 100) / 100;
-};
-
 // --- Sub-Components ---
-
 const ProductCard = React.memo(({ product, onAdd, onUpdateQty, cartQuantity }) => {
   const [showQtyModal, setShowQtyModal] = useState(false);
   const qty = cartQuantity || 0;
@@ -67,14 +18,10 @@ const ProductCard = React.memo(({ product, onAdd, onUpdateQty, cartQuantity }) =
   const categoryName = getSafeString(product.category);
   const brandName = getSafeString(product.brand);
   const price = roundToTwoDecimals(product.retailRate);
-  
-  // Get stock value safely
+
   const stock = product.stock !== undefined ? product.stock : Infinity;
-  
-  // Array of quantity options (decimal values for bulk selection)
   const quantityOptions = [0.05, 0.10, 0.15, 0.20, 0.25, 0.50, 0.75];
-  
-  // Handle quantity selection from modal
+
   const handleQuantitySelect = (selectedQty) => {
     if (selectedQty <= stock) {
       onUpdateQty(product._id, selectedQty, stock);
@@ -83,8 +30,7 @@ const ProductCard = React.memo(({ product, onAdd, onUpdateQty, cartQuantity }) =
     }
     setShowQtyModal(false);
   };
-  
-  // Handle increment by 1 (whole number)
+
   const handleIncrement = () => {
     const newQty = Math.round((qty + 1) * 1000) / 1000;
     if (newQty <= stock) {
@@ -93,11 +39,9 @@ const ProductCard = React.memo(({ product, onAdd, onUpdateQty, cartQuantity }) =
       alert(`Cannot exceed stock limit of ${stock}`);
     }
   };
-  
-  // Handle decrement by 1 (whole number)
+
   const handleDecrement = () => {
     const newQty = Math.round((qty - 1) * 1000) / 1000;
-    // If new quantity would be less than 0.05 (minimum selectable quantity), remove the item
     if (newQty < 0.05) {
       onUpdateQty(product._id, 0, stock);
     } else if (newQty >= 0) {
@@ -129,34 +73,33 @@ const ProductCard = React.memo(({ product, onAdd, onUpdateQty, cartQuantity }) =
           <div className="flex items-center justify-between gap-2 mt-2">
             {qty > 0 ? (
               <>
-                <button 
-                  onClick={handleDecrement} 
+                <button
+                  onClick={handleDecrement}
                   className="bg-red-500 hover:bg-red-600 text-white font-black rounded-lg text-lg shadow-sm flex-shrink-0 w-8 h-8 min-w-[2rem] min-h-[2rem]"
                 >
                   -
                 </button>
-                
-                {/* Clickable quantity display */}
+
                 <div className="flex-1 text-center min-w-[70px]">
                   <button
                     onClick={() => setShowQtyModal(true)}
                     className="text-xl font-black text-black hover:bg-gray-100 px-2 py-1 rounded-lg transition-colors w-full"
                   >
-                    {qty.toFixed(3)}
+                    {formatQuantityDisplay(qty)}
                   </button>
                 </div>
-                
-                <button 
-                  onClick={handleIncrement} 
-                  className="bg-green-500 hover:bg-green-600 text-white font-black rounded-lg text-lg shadow-sm flex-shrink-0 w-8 h-8 min-w-[2rem] min-h-[2rem]" 
+
+                <button
+                  onClick={handleIncrement}
+                  className="bg-green-500 hover:bg-green-600 text-white font-black rounded-lg text-lg shadow-sm flex-shrink-0 w-8 h-8 min-w-[2rem] min-h-[2rem]"
                   disabled={qty >= stock}
                 >
                   +
                 </button>
               </>
             ) : (
-              <button 
-                onClick={() => onAdd(product)} 
+              <button
+                onClick={() => onAdd(product)}
                 className="w-full bg-blue-600 hover:bg-blue-700 text-white py-2 rounded-lg font-bold shadow-md transition-transform active:scale-95 text-xs uppercase"
               >
                 ADD TO CART
@@ -168,9 +111,8 @@ const ProductCard = React.memo(({ product, onAdd, onUpdateQty, cartQuantity }) =
 
       {/* Quantity Selection Modal */}
       {showQtyModal && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={() => setShowQtyModal(false)}>
+        <div className="fixed inset-0 bg-black/50 z-[100] flex items-center justify-center p-4" onClick={() => setShowQtyModal(false)}>
           <div className="bg-white rounded-xl max-w-md w-full max-h-[80vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
-            {/* Modal Header */}
             <div className="p-4 border-b flex justify-between items-center">
               <div>
                 <h3 className="font-bold text-lg text-gray-900">Select Quantity</h3>
@@ -184,15 +126,12 @@ const ProductCard = React.memo(({ product, onAdd, onUpdateQty, cartQuantity }) =
               </button>
             </div>
 
-            {/* Modal Body */}
             <div className="flex-1 overflow-y-auto p-4">
-              {/* Current quantity display */}
               <div className="bg-blue-50 rounded-lg p-4 mb-4 text-center">
                 <div className="text-xs text-blue-600 font-bold mb-1">CURRENT QUANTITY</div>
-                <div className="text-3xl font-black text-blue-700">{qty.toFixed(3)}</div>
+                <div className="text-3xl font-black text-blue-700">{formatQuantityDisplay(qty)}</div>
               </div>
 
-              {/* Quick select options */}
               <div className="mb-4">
                 <div className="text-xs font-bold text-gray-600 mb-2 uppercase tracking-wide">Quick Select</div>
                 <div className="grid grid-cols-3 gap-2">
@@ -203,8 +142,8 @@ const ProductCard = React.memo(({ product, onAdd, onUpdateQty, cartQuantity }) =
                       disabled={option > stock}
                       className={`
                         py-3 px-2 rounded-lg font-bold text-sm transition-all
-                        ${option > stock 
-                          ? 'bg-gray-100 text-gray-400 cursor-not-allowed' 
+                        ${option > stock
+                          ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
                           : 'bg-gray-100 hover:bg-blue-100 text-gray-700 hover:text-blue-700'
                         }
                         ${Math.abs(option - qty) < 0.001 ? 'ring-2 ring-blue-500 bg-blue-100 text-blue-700' : ''}
@@ -219,7 +158,6 @@ const ProductCard = React.memo(({ product, onAdd, onUpdateQty, cartQuantity }) =
                 </div>
               </div>
 
-              {/* Custom quantity input */}
               <div className="mb-4">
                 <div className="text-xs font-bold text-gray-600 mb-2 uppercase tracking-wide">Custom Quantity</div>
                 <div className="flex gap-2">
@@ -257,7 +195,6 @@ const ProductCard = React.memo(({ product, onAdd, onUpdateQty, cartQuantity }) =
               </div>
             </div>
 
-            {/* Modal Footer */}
             <div className="p-4 border-t flex gap-2">
               <button
                 onClick={() => {
@@ -285,11 +222,11 @@ const ProductCard = React.memo(({ product, onAdd, onUpdateQty, cartQuantity }) =
 // --- Main POS Component ---
 
 const POS = () => {
-  const { id: billId } = useParams(); // Get bill ID from URL if editing
+  const { id: billId } = useParams();
   const navigate = useNavigate();
   const [isEditMode, setIsEditMode] = useState(false);
-  const [billNumber, setBillNumber] = useState(""); // State to store bill number
-  
+  const [billNumber, setBillNumber] = useState("");
+
   const [products, setProducts] = useState([]);
   const [search, setSearch] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("");
@@ -300,10 +237,16 @@ const POS = () => {
   const [discount, setDiscount] = useState(0);
   const [paymentMethod, setPaymentMethod] = useState("cash");
 
+  // Price editing states
+  const [showEditPriceModal, setShowEditPriceModal] = useState(false);
+  const [selectedEditItem, setSelectedEditItem] = useState(null);
+  const [editPriceValue, setEditPriceValue] = useState("");
+
   // Bill date state
-  const [billDate, setBillDate] = useState(new Date().toISOString().slice(0, 16));
+  const [billDate, setBillDate] = useState('');
   const [isEditingDate, setIsEditingDate] = useState(false);
   const dateInputRef = useRef(null);
+  const [currentDateTime, setCurrentDateTime] = useState('');
 
   // Customer related states
   const [customers, setCustomers] = useState([]);
@@ -319,30 +262,39 @@ const POS = () => {
   });
 
   // Credit payment related states
-  const [creditAmount, setCreditAmount] = useState("");
   const [cashAmount, setCashAmount] = useState("");
   const [upiAmount, setUpiAmount] = useState("");
   const [showCreditModal, setShowCreditModal] = useState(false);
   const [dueAmount, setDueAmount] = useState(0);
   const [creditType, setCreditType] = useState("full");
 
-  // Mobile UI State - Cart drawer is hidden by default
-  const [isCartOpen, setIsCartOpen] = useState(false);
+  // Add this state near other state declarations (around line 100-120)
+  const [showSearchBox, setShowSearchBox] = useState(false);
 
-  // Current date and time display (editable)
-  const [currentDateTime, setCurrentDateTime] = useState(formatDateTime(billDate));
+  // Mobile UI State
+  const [isCartOpen, setIsCartOpen] = useState(false);
+  // Sidebar state for desktop
+  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
 
   const debouncedSearch = useDebounce(search, 300);
   const debouncedCustomerSearch = useDebounce(customerSearch, 300);
 
-  // Check if customer is registered (not walk-in)
   const isRegisteredCustomer = useMemo(() => {
     return selectedCustomer !== null && selectedCustomer._id;
   }, [selectedCustomer]);
 
+  // Initialize date/time
+  useEffect(() => {
+    const now = new Date();
+    setBillDate(formatForInput(now));
+    setCurrentDateTime(formatDateTime(now));
+  }, []);
+
   // Update displayed date/time when billDate changes
   useEffect(() => {
-    setCurrentDateTime(formatDateTime(billDate));
+    if (billDate) {
+      setCurrentDateTime(formatDateTime(billDate));
+    }
   }, [billDate]);
 
   // Load bill data if in edit mode
@@ -353,11 +305,9 @@ const POS = () => {
         try {
           const response = await axios.get(`${API}/bills/${billId}`);
           const bill = response.data;
-          
-          // Store the bill number
+
           setBillNumber(bill.billNumber || bill.id || "N/A");
-          
-          // Populate cart items
+
           const cartItems = bill.items.map(item => ({
             product: item.productId,
             name: item.name || item.productName,
@@ -365,13 +315,21 @@ const POS = () => {
             qty: item.quantity,
             total: roundToTwoDecimals(item.quantity * item.price)
           }));
-          
+
           setCart(cartItems);
           setDiscount(bill.discount || 0);
           setPaymentMethod(bill.paymentMethod || "cash");
-          setBillDate(bill.billDate ? new Date(bill.billDate).toISOString().slice(0, 16) : new Date().toISOString().slice(0, 16));
-          
-          // Set customer if exists
+
+          if (bill.billDate) {
+            const billDateObj = new Date(bill.billDate);
+            setBillDate(formatForInput(billDateObj));
+            setCurrentDateTime(formatDateTime(billDateObj));
+          } else {
+            const now = new Date();
+            setBillDate(formatForInput(now));
+            setCurrentDateTime(formatDateTime(now));
+          }
+
           if (bill.customerId) {
             setSelectedCustomer({
               _id: bill.customerId,
@@ -388,48 +346,96 @@ const POS = () => {
         }
       }
     };
-    
+
     loadBillForEdit();
   }, [billId, navigate]);
 
-  // Handle date change
+  // Reset date when cart opens for new bill
+  useEffect(() => {
+    if (isCartOpen && !isEditMode && !billId) {
+      const now = new Date();
+      setBillDate(formatForInput(now));
+      setCurrentDateTime(formatDateTime(now));
+    }
+  }, [isCartOpen, isEditMode, billId]);
+
+  // Add this function to toggle search box visibility
+  const toggleSearchBox = useCallback(() => {
+    setShowSearchBox(prev => !prev);
+  }, []);
+
   const handleDateChange = (e) => {
-    setBillDate(e.target.value);
+    const newDate = e.target.value;
+    setBillDate(newDate);
+    if (newDate) {
+      setCurrentDateTime(formatDateTime(newDate));
+    }
   };
 
-  // Handle date edit click
   const handleEditDateClick = () => {
     setIsEditingDate(true);
     setTimeout(() => {
       if (dateInputRef.current) {
-        dateInputRef.current.showPicker();
+        if (dateInputRef.current.showPicker) {
+          dateInputRef.current.showPicker();
+        } else {
+          dateInputRef.current.focus();
+        }
       }
     }, 100);
   };
 
-  // Handle date blur
   const handleDateBlur = () => {
     setIsEditingDate(false);
   };
 
-  // Function to close cart
   const closeCart = useCallback(() => {
     setIsCartOpen(false);
   }, []);
 
-  // Function to open cart
   const openCart = useCallback(() => {
     setIsCartOpen(true);
   }, []);
 
-  // Extract unique categories and brands from products with proper handling
+  // Price editing handlers
+  const handleEditPrice = useCallback((item) => {
+    setSelectedEditItem(item);
+    setEditPriceValue(item.price.toString());
+    setShowEditPriceModal(true);
+  }, []);
+
+  const handleUpdatePrice = useCallback(() => {
+    if (!selectedEditItem) return;
+
+    const newPrice = roundToTwoDecimals(parseFloat(editPriceValue));
+    if (isNaN(newPrice) || newPrice <= 0) {
+      alert("Please enter a valid price");
+      return;
+    }
+
+    setCart(prevCart => prevCart.map(item => {
+      if (item.product === selectedEditItem.product) {
+        const newTotal = roundToTwoDecimals(item.qty * newPrice);
+        return {
+          ...item,
+          price: newPrice,
+          total: newTotal
+        };
+      }
+      return item;
+    }));
+
+    setShowEditPriceModal(false);
+    setSelectedEditItem(null);
+    setEditPriceValue("");
+  }, [selectedEditItem, editPriceValue]);
+
   const { categories, brands } = useMemo(() => {
     const cats = new Set();
     const brnds = new Set();
     products.forEach(product => {
       const category = getSafeString(product.category);
       if (category) cats.add(category);
-
       const brand = getSafeString(product.brand);
       if (brand) brnds.add(brand);
     });
@@ -439,7 +445,6 @@ const POS = () => {
     };
   }, [products]);
 
-  // Fetch customers
   const fetchCustomers = useCallback(async () => {
     setCustomerLoading(true);
     try {
@@ -452,7 +457,6 @@ const POS = () => {
     }
   }, []);
 
-  // Filter customers based on search
   const filteredCustomers = useMemo(() => {
     if (!debouncedCustomerSearch) return customers;
     return customers.filter(customer =>
@@ -479,20 +483,21 @@ const POS = () => {
   useEffect(() => { fetchCustomers(); }, [fetchCustomers]);
 
   useEffect(() => {
-    // Only load from localStorage if not in edit mode
-    if (!isEditMode) {
+    if (!isEditMode && !billId) {
       const saved = localStorage.getItem('pos_cart');
       if (saved) setCart(JSON.parse(saved));
       const savedCustomer = localStorage.getItem('pos_selected_customer');
       if (savedCustomer) setSelectedCustomer(JSON.parse(savedCustomer));
       const savedBillDate = localStorage.getItem('pos_bill_date');
-      if (savedBillDate) setBillDate(savedBillDate);
+      if (savedBillDate) {
+        setBillDate(savedBillDate);
+        setCurrentDateTime(formatDateTime(savedBillDate));
+      }
     }
-  }, [isEditMode]);
+  }, [isEditMode, billId]);
 
   useEffect(() => {
-    // Only save to localStorage if not in edit mode
-    if (!isEditMode) {
+    if (!isEditMode && !billId) {
       localStorage.setItem('pos_cart', JSON.stringify(cart));
       localStorage.setItem('pos_bill_date', billDate);
       if (selectedCustomer) {
@@ -501,16 +506,13 @@ const POS = () => {
         localStorage.removeItem('pos_selected_customer');
       }
     }
-  }, [cart, selectedCustomer, billDate, isEditMode]);
+  }, [cart, selectedCustomer, billDate, isEditMode, billId]);
 
-  // Handle product code/search input to add to cart
   const handleSearchKeyPress = useCallback(async (e) => {
     if (e.key === 'Enter' && search.trim()) {
       const searchTerm = search.trim();
-
       let product = null;
 
-      // First try to find by productCode
       product = products.find(p =>
         (p.productCode && p.productCode.toString() === searchTerm) ||
         (p.sku && p.sku.toString() === searchTerm) ||
@@ -518,17 +520,14 @@ const POS = () => {
         (p.barcode && p.barcode.toString() === searchTerm)
       );
 
-      // If not found by code, try to find by ID
       if (!product && searchTerm.match(/^[0-9a-fA-F]{24}$/)) {
         product = products.find(p => p._id === searchTerm);
       }
 
-      // If not found, try exact name match
       if (!product) {
         product = products.find(p => p.name.toLowerCase() === searchTerm.toLowerCase());
       }
 
-      // If still not found, try partial name match
       if (!product) {
         const matchingProducts = products.filter(p =>
           p.name.toLowerCase().includes(searchTerm.toLowerCase())
@@ -566,8 +565,7 @@ const POS = () => {
             }
             const newQty = existing.qty + 1;
             const newTotal = roundToTwoDecimals(newQty * price);
-            const updatedCart = prev.map(i => i.product === product._id ? { ...i, qty: newQty, total: newTotal } : i);
-            return updatedCart;
+            return prev.map(i => i.product === product._id ? { ...i, qty: newQty, total: newTotal } : i);
           }
           return [...prev, {
             product: product._id,
@@ -580,7 +578,7 @@ const POS = () => {
 
         setSearch("");
       } else {
-        alert(`Product "${searchTerm}" not found. Please check the product code or name.`);
+        alert(`Product "${searchTerm}" not found.`);
       }
     }
   }, [search, products]);
@@ -597,8 +595,13 @@ const POS = () => {
     [products, debouncedSearch, selectedCategory, selectedBrand]
   );
 
-  // --- Calculations with 2 decimal precision ---
-  const totalItemCount = useMemo(() => cart.reduce((sum, i) => sum + i.qty, 0), [cart]);
+  const totalItemCount = useMemo(() => {
+    const sum = cart.reduce((sum, i) => {
+      const qty = typeof i.qty === 'number' ? i.qty : parseFloat(i.qty) || 0;
+      return sum + qty;
+    }, 0);
+    return parseFloat(sum.toFixed(3));
+  }, [cart]);
 
   const subtotal = useMemo(() => {
     const sum = cart.reduce((sum, i) => sum + i.total, 0);
@@ -618,20 +621,17 @@ const POS = () => {
   const removeItem = useCallback((id) => setCart(prev => prev.filter(i => i.product !== id)), []);
 
   const updateQty = useCallback((id, newQty, stock) => {
-    // Round to 3 decimal places to handle floating point precision
     const roundedQty = Math.round(newQty * 1000) / 1000;
-    
-    // Remove item if quantity is 0 or less
+
     if (roundedQty <= 0) {
       return removeItem(id);
     }
-    
-    // Check stock availability (if stock is defined)
+
     if (stock !== undefined && stock !== null && roundedQty > stock) {
       alert(`Cannot add more than ${stock} units of this product`);
       return;
     }
-    
+
     setCart(prev => prev.map(item => {
       if (item.product === id) {
         const newTotal = roundToTwoDecimals(roundedQty * item.price);
@@ -643,8 +643,8 @@ const POS = () => {
 
   const handleAddToCart = useCallback((product) => {
     const price = roundToTwoDecimals(product.retailRate);
-    const incrementValue = 1; // Changed from 0.05 to 1
-    
+    const incrementValue = 1;
+
     setCart(prev => {
       const existing = prev.find(i => i.product === product._id);
       if (existing) {
@@ -664,13 +664,12 @@ const POS = () => {
         product: product._id,
         name: product.name,
         price: price,
-        qty: incrementValue, // Start with 1 instead of 0.05
+        qty: incrementValue,
         total: roundToTwoDecimals(price * incrementValue)
       }];
     });
   }, []);
 
-  // Discount handlers
   const incrementDiscount = useCallback(() => {
     setDiscount(prev => Math.min(100, prev + 1));
   }, []);
@@ -691,7 +690,6 @@ const POS = () => {
     }
   }, []);
 
-  // Customer handlers
   const handleSelectCustomer = useCallback((customer) => {
     setSelectedCustomer(customer);
     setShowCustomerModal(false);
@@ -727,7 +725,6 @@ const POS = () => {
     }
   }, [newCustomer]);
 
-  // Process checkout or update function
   const processCheckout = useCallback(async (paymentData = null) => {
     if (cart.length === 0) {
       alert("Cart is empty!");
@@ -768,14 +765,38 @@ const POS = () => {
 
       let res;
       if (isEditMode && billId) {
-        // Update existing bill
         res = await axios.put(`${API}/bills/${billId}`, payload);
       } else {
-        // Create new bill
         res = await axios.post(`${API}/bills`, payload);
       }
 
       if (res.data.success) {
+        // Build the bill object for printing from the saved response
+        const savedBill = res.data.bill || res.data.data || {};
+
+        const billForPrint = {
+          billNumber: savedBill.billNumber || billNumber,
+          date: new Date(billDate).toISOString(),
+          customer: selectedCustomer?.name || "Walk-in Customer",
+          customerPhone: selectedCustomer?.phone || "",
+          items: cart.map(i => ({
+            name: i.name,
+            productName: i.name,
+            quantity: i.qty,
+            price: roundToTwoDecimals(i.price),
+          })),
+          discount: roundToTwoDecimals(discount),
+          discountAmount: roundToTwoDecimals(discountAmount),
+          subtotal: cart.reduce((sum, i) => sum + i.price * i.qty, 0),
+          total: total,
+          paymentMethod: finalPaymentMethod,
+          paid: finalPaidAmount,
+          due: finalDueAmount,
+        };
+
+        // 🖨️ Trigger print preview after successful save/update
+        handlePrintBill(billForPrint);
+
         let message = isEditMode ? `Bill Updated Successfully!\n` : `Transaction Successful!\n`;
         if (isEditMode) {
           message += `Bill #${billNumber}\n`;
@@ -803,11 +824,13 @@ const POS = () => {
           setCart([]);
           setDiscount(0);
           setSelectedCustomer(null);
+          const now = new Date();
+          setBillDate(formatForInput(now));
+          setCurrentDateTime(formatDateTime(now));
         }
         closeCart();
         fetchProducts();
-        
-        // Navigate back to reports after successful update
+
         if (isEditMode) {
           navigate('/reports');
         }
@@ -822,7 +845,6 @@ const POS = () => {
     }
   }, [cart, discountAmount, paymentMethod, total, selectedCustomer, fetchProducts, closeCart, billDate, isEditMode, billId, navigate, billNumber]);
 
-  // Credit payment handlers
   const handleFullCredit = useCallback(() => {
     setCreditType("full");
     setCashAmount("");
@@ -843,7 +865,7 @@ const POS = () => {
     const value = e.target.value;
     const cashVal = value === '' ? 0 : parseFloat(value);
     const upiVal = upiAmount === '' ? 0 : parseFloat(upiAmount);
-    const totalPaid = (cashVal || 0) + (upiVal || 0);
+    const totalPaid = roundToTwoDecimals((cashVal || 0) + (upiVal || 0));
 
     if (totalPaid > total) {
       alert(`Total paid cannot exceed ${formatCurrency(total)}`);
@@ -859,7 +881,7 @@ const POS = () => {
     const value = e.target.value;
     const upiVal = value === '' ? 0 : parseFloat(value);
     const cashVal = cashAmount === '' ? 0 : parseFloat(cashAmount);
-    const totalPaid = (cashVal || 0) + (upiVal || 0);
+    const totalPaid = roundToTwoDecimals((cashVal || 0) + (upiVal || 0));
 
     if (totalPaid > total) {
       alert(`Total paid cannot exceed ${formatCurrency(total)}`);
@@ -903,7 +925,7 @@ const POS = () => {
     } else {
       const cashPaid = cashAmount === '' ? 0 : roundToTwoDecimals(parseFloat(cashAmount));
       const upiPaid = upiAmount === '' ? 0 : roundToTwoDecimals(parseFloat(upiAmount));
-      const totalPaid = cashPaid + upiPaid;
+      const totalPaid = roundToTwoDecimals(cashPaid + upiPaid);
 
       if (totalPaid > total) {
         alert("Total paid amount cannot exceed total amount!");
@@ -932,7 +954,6 @@ const POS = () => {
     }
   }, [creditType, cashAmount, upiAmount, total, processCheckout]);
 
-  // Payment method handlers
   const getAvailablePaymentMethods = useMemo(() => {
     const allMethods = [
       { id: 'cash', label: '💵 CASH', color: 'bg-green-600 hover:bg-green-700' },
@@ -959,25 +980,31 @@ const POS = () => {
     }
   }, [paymentMethod, handleCreditPayment, processCheckout, isRegisteredCustomer]);
 
-  // Clear filters
   const clearFilters = () => {
     setSelectedCategory("");
     setSelectedBrand("");
     setSearch("");
   };
 
+  // Get category counts for sidebar display
+  const categoryCounts = useMemo(() => {
+    const counts = {};
+    products.forEach(product => {
+      const category = getSafeString(product.category);
+      if (category) {
+        counts[category] = (counts[category] || 0) + 1;
+      }
+    });
+    return counts;
+  }, [products]);
+
   return (
     <div className="relative flex flex-col h-screen bg-gray-50 text-black overflow-hidden">
-      {/* Edit Mode Banner */}
-      {isEditMode && (
-        <div className="fixed top-0 left-0 right-0 bg-yellow-500 text-black text-center py-2 font-bold z-50">
-          ✏️ EDITING BILL #{billNumber} - Make your changes and click "UPDATE BILL"
-        </div>
-      )}
+     
 
       {/* Customer Selection Modal */}
       {showCustomerModal && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+        <div className="fixed inset-0 bg-black/50 z-[100] flex items-center justify-center p-4">
           <div className="bg-white rounded-xl max-w-md w-full max-h-[80vh] flex flex-col">
             <div className="p-4 border-b flex justify-between items-center">
               <h3 className="font-bold text-lg">Select Customer</h3>
@@ -1065,7 +1092,7 @@ const POS = () => {
 
       {/* Credit Payment Modal */}
       {showCreditModal && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+        <div className="fixed inset-0 bg-black/50 z-[100] flex items-center justify-center p-4">
           <div className="bg-white rounded-xl max-w-md w-full">
             <div className="p-4 border-b flex justify-between items-center">
               <h3 className="font-bold text-lg">
@@ -1152,52 +1179,238 @@ const POS = () => {
         </div>
       )}
 
-      {/* Mobile Header with Cart Button */}
+      {/* Price Edit Modal */}
+      {showEditPriceModal && selectedEditItem && (
+        <div
+          className="fixed inset-0 bg-black bg-opacity-50 z-[100] flex items-center justify-center p-4"
+          onClick={() => setShowEditPriceModal(false)}
+        >
+          <div
+            className="bg-white rounded-xl max-w-md w-full"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="p-4 border-b">
+              <h3 className="text-lg font-bold text-gray-900">Edit Item Price</h3>
+              <p className="text-sm text-gray-600 mt-1">{selectedEditItem.name}</p>
+            </div>
+
+            <div className="p-4 space-y-4">
+              <div className="bg-gray-50 p-3 rounded-lg">
+                <div className="text-xs text-gray-500 mb-1">Current Price</div>
+                <div className="text-xl font-bold text-gray-700">{formatCurrency(selectedEditItem.price)}</div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  New Price (₹)
+                </label>
+                <input
+                  type="number"
+                  value={editPriceValue}
+                  onChange={(e) => setEditPriceValue(e.target.value)}
+                  className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none text-gray-900 bg-white"
+                  placeholder="Enter new price"
+                  min="0"
+                  step="0.01"
+                  autoFocus
+                />
+              </div>
+
+              {selectedEditItem && editPriceValue && parseFloat(editPriceValue) > 0 && (
+                <div className="bg-blue-50 p-3 rounded-lg">
+                  <div className="text-xs text-blue-600 mb-1">New Total</div>
+                  <div className="text-xl font-bold text-blue-700">
+                    {formatCurrency(roundToTwoDecimals(selectedEditItem.qty * parseFloat(editPriceValue)))}
+                  </div>
+                  <div className="text-xs text-gray-500 mt-1">
+                    Quantity: {formatQuantityDisplay(selectedEditItem.qty)} × New Price: {formatCurrency(roundToTwoDecimals(parseFloat(editPriceValue)))}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="p-4 border-t flex gap-3">
+              <button
+                onClick={() => setShowEditPriceModal(false)}
+                className="flex-1 px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition font-medium"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleUpdatePrice}
+                className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition font-medium"
+              >
+                Update Price
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Mobile Header */}
       <div className="md:hidden flex justify-between items-center p-3 bg-white border-b shadow-sm z-20">
         <h1 className="font-bold text-base">POS SYSTEM {isEditMode && '(EDIT MODE)'}</h1>
         <button
           onClick={openCart}
           className="relative px-3 py-1.5 bg-blue-600 text-white rounded-lg text-sm font-bold shadow-md"
         >
-          CART ({totalItemCount})
+          CART ({formatQuantityDisplay(totalItemCount)})
         </button>
       </div>
 
-      {/* Desktop Header with Cart Button */}
+      {/* Desktop Header */}
       <div className="hidden md:flex justify-between items-center p-4 bg-white border-b shadow-sm z-20">
         <h1 className="font-bold text-lg">POS SYSTEM {isEditMode && '(EDIT MODE)'}</h1>
-        <button
-          onClick={openCart}
-          className="relative px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-bold shadow-md hover:bg-blue-700 transition-colors"
-        >
-          🛒 VIEW CART ({totalItemCount})
-        </button>
+        <div className="flex gap-2">
+          <button
+            onClick={() => setIsSidebarOpen(!isSidebarOpen)}
+            className="px-3 py-1.5 bg-gray-200 text-gray-700 rounded-lg text-sm font-bold hover:bg-gray-300 transition-colors"
+          >
+            {isSidebarOpen ? '◀ Hide Categories' : '▶ Show Categories'}
+          </button>
+          <button
+            onClick={openCart}
+            className="relative px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-bold shadow-md hover:bg-blue-700 transition-colors"
+          >
+            🛒 VIEW CART ({formatQuantityDisplay(totalItemCount)})
+          </button>
+        </div>
       </div>
 
-      {/* Product Area */}
-      <div className="flex-1 overflow-y-auto p-3 md:p-4">
-        {isEditMode && (
-          <div className="mb-3 p-2 bg-yellow-100 border border-yellow-300 rounded-lg text-sm text-yellow-800">
-            Editing bill #{billNumber} - Modify items, discount, or customer details
+      {/* Main Content Area with Sidebar */}
+      <div className="flex-1 flex overflow-hidden">
+        {/* Category Sidebar - Desktop */}
+        {categories.length > 0 && (
+          <div className={`
+    hidden md:block bg-white border-r border-gray-200 transition-all duration-300 overflow-y-auto
+    ${isSidebarOpen ? 'w-64' : 'w-0'}
+  `}>
+            {isSidebarOpen && (
+              <div className="p-4">
+                {/* All Categories Option */}
+                <button
+                  onClick={() => setSelectedCategory("")}
+                  className={`
+            w-full text-left p-2 rounded-lg mb-1 transition-all
+            ${!selectedCategory
+                      ? 'bg-blue-600 text-white shadow-sm'
+                      : 'hover:bg-gray-100 text-gray-700'
+                    }
+          `}
+                >
+                  <div className="flex justify-between items-center">
+                    <span className="font-medium text-sm">All Categories</span>
+                    <span className={`text-xs ${!selectedCategory ? 'text-white' : 'text-gray-500'}`}>
+                      {products.length}
+                    </span>
+                  </div>
+                </button>
+
+                {/* Category List */}
+                <div className="space-y-1 mt-2">
+                  {categories.map(category => (
+                    <button
+                      key={`sidebar-category-${category}`}
+                      onClick={() => setSelectedCategory(category)}
+                      className={`
+                w-full text-left p-2 rounded-lg transition-all
+                ${selectedCategory === category
+                          ? 'bg-blue-600 text-white shadow-sm'
+                          : 'hover:bg-gray-100 text-gray-700'
+                        }
+              `}
+                    >
+                      <div className="flex justify-between items-center">
+                        <span className="text-sm truncate flex-1">{category}</span>
+                        <span className={`text-xs ml-2 ${selectedCategory === category ? 'text-white' : 'text-gray-500'}`}>
+                          {categoryCounts[category] || 0}
+                        </span>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+
+                {/* Brand Filter Section (optional) */}
+                {brands.length > 0 && (
+                  <div className="mt-6 pt-4 border-t">
+                    <h3 className="font-bold text-sm text-gray-700 uppercase tracking-wide mb-2">Brands</h3>
+                    <select
+                      className="w-full p-2 border border-gray-200 rounded-lg text-xs font-medium bg-white focus:border-blue-500 outline-none"
+                      value={selectedBrand}
+                      onChange={(e) => setSelectedBrand(e.target.value)}
+                    >
+                      <option value="">All Brands</option>
+                      {brands.map(brand => (
+                        <option key={`brand-${brand}`} value={brand}>{brand}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+
+                {/* Clear Filters Button */}
+                {(selectedCategory || selectedBrand || search) && (
+                  <button
+                    onClick={clearFilters}
+                    className="w-full mt-4 px-3 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg text-xs font-medium transition-colors"
+                  >
+                    Clear All Filters ✕
+                  </button>
+                )}
+              </div>
+            )}
           </div>
         )}
-        
-        {/* Search and Filters Section */}
-        <div className="space-y-3 mb-4">
-          {/* Search Bar with Enter key support */}
-          <div className="relative w-full">
-            <input
-              className="w-full p-2 pl-8 border border-gray-200 rounded-lg focus:border-blue-500 outline-none text-sm text-black"
-              placeholder="Search products or enter product code and press Enter to add to cart..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              onKeyPress={handleSearchKeyPress}
-            />
-            <span className="absolute left-2 top-2.5 text-xs opacity-40">🔍</span>
+
+        {/* Products Area */}
+        <div className="flex-1 overflow-y-auto p-3 md:p-4">
+          {isEditMode && (
+            <div className="mb-3 p-2 bg-yellow-100 border border-yellow-300 rounded-lg text-sm text-yellow-800">
+              Editing bill #{billNumber} - Modify items, discount, or customer details
+            </div>
+          )}
+
+
+
+          {/* Search Bar */}
+          <div className="space-y-3 mb-4">
+            {/* Search Box Toggle Button */}
+            <div className="flex justify-between items-center">
+              <button
+                onClick={toggleSearchBox}
+                className="text-xs bg-gray-200 hover:bg-gray-300 text-gray-700 px-2 py-1 rounded-lg font-medium transition-colors flex items-center gap-1"
+              >
+                {showSearchBox ? '🔍 Hide Search' : '🔍 Show Search'}
+              </button>
+              {showSearchBox && (
+                <span className="text-xs text-gray-400">Press Enter to add to cart</span>
+              )}
+            </div>
+
+            {/* Search Input - Conditionally Rendered */}
+            {showSearchBox && (
+              <div className="relative w-full">
+                <input
+                  className="w-full p-2 pl-8 border border-gray-200 rounded-lg focus:border-blue-500 outline-none text-sm text-black"
+                  placeholder="Search products or enter product code and press Enter to add to cart..."
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  onKeyPress={handleSearchKeyPress}
+                />
+                <span className="absolute left-2 top-2.5 text-xs opacity-40">🔍</span>
+              </div>
+            )}
           </div>
 
-          {/* Filters Row */}
-          <div className="flex flex-wrap gap-2">
+          {/* Also update the mobile category filter section to maintain consistency */}
+          {/* Mobile Category Filter - Visible only on mobile */}
+          <div className="md:hidden flex flex-wrap gap-2 items-center">
+            <button
+              onClick={toggleSearchBox}
+              className="px-2 py-1.5 bg-gray-200 hover:bg-gray-300 rounded-lg text-xs font-medium transition-colors"
+            >
+              {showSearchBox ? '🔍' : '🔍 Hide'}
+            </button>
+
             {categories.length > 0 && (
               <select
                 className="px-2 py-1.5 border border-gray-200 rounded-lg text-xs font-medium bg-white focus:border-blue-500 outline-none"
@@ -1206,7 +1419,7 @@ const POS = () => {
               >
                 <option value="">All Categories</option>
                 {categories.map(cat => (
-                  <option key={`category-${cat}`} value={cat}>{cat}</option>
+                  <option key={`mobile-category-${cat}`} value={cat}>{cat}</option>
                 ))}
               </select>
             )}
@@ -1219,7 +1432,7 @@ const POS = () => {
               >
                 <option value="">All Brands</option>
                 {brands.map(brand => (
-                  <option key={`brand-${brand}`} value={brand}>{brand}</option>
+                  <option key={`mobile-brand-${brand}`} value={brand}>{brand}</option>
                 ))}
               </select>
             )}
@@ -1233,35 +1446,37 @@ const POS = () => {
               </button>
             )}
           </div>
-        </div>
 
-        {loading ? (
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 animate-pulse">
-            {[1, 2, 3, 4, 5, 6, 7, 8].map(i => <div key={`skeleton-${i}`} className="h-32 bg-gray-200 rounded-lg"></div>)}
-          </div>
-        ) : (
-          <>
-            <div className="text-xs text-gray-500 mb-2">
-              Showing {filteredProducts.length} of {products.length} products
+          {loading ? (
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 animate-pulse">
+              {[1, 2, 3, 4, 5, 6, 7, 8].map(i => <div key={`skeleton-${i}`} className="h-32 bg-gray-200 rounded-lg"></div>)}
             </div>
-            <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
-              {filteredProducts.map(p => (
-                <ProductCard
-                  key={p._id}
-                  product={p}
-                  onAdd={handleAddToCart}
-                  onUpdateQty={updateQty}
-                  cartQuantity={cart.find(i => i.product === p._id)?.qty}
-                />
-              ))}
-            </div>
-            {filteredProducts.length === 0 && (
-              <div className="text-center py-8 text-gray-400 text-sm">
-                No products found
+          ) : (
+            <>
+              <div className="text-xs text-gray-500 mb-2">
+                Showing {filteredProducts.length} of {products.length} products
+                {selectedCategory && <span> • Category: {selectedCategory}</span>}
+                {selectedBrand && <span> • Brand: {selectedBrand}</span>}
               </div>
-            )}
-          </>
-        )}
+              <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+                {filteredProducts.map(p => (
+                  <ProductCard
+                    key={p._id}
+                    product={p}
+                    onAdd={handleAddToCart}
+                    onUpdateQty={updateQty}
+                    cartQuantity={cart.find(i => i.product === p._id)?.qty}
+                  />
+                ))}
+              </div>
+              {filteredProducts.length === 0 && (
+                <div className="text-center py-8 text-gray-400 text-sm">
+                  No products found
+                </div>
+              )}
+            </>
+          )}
+        </div>
       </div>
 
       {/* Cart Overlay */}
@@ -1272,215 +1487,221 @@ const POS = () => {
         />
       )}
 
-{/* Cart Drawer */}
-<div className={`
-  fixed top-0 right-0 bottom-0 z-50 w-[90%] max-w-[380px] bg-white shadow-2xl transition-transform duration-300 transform overflow-hidden
-  ${isCartOpen ? "translate-x-0" : "translate-x-full"}
-`}>
-  <div className="flex flex-col h-full w-full relative">
-    {/* Cart Header with Editable Date/Time */}
-    <div className="bg-gray-50 border-b sticky top-0 z-10">
-      <div className="flex justify-between items-center p-4 gap-3">
-        <div className="flex-1 min-w-0">
-          <h2 className="text-sm md:text-base font-bold text-black uppercase tracking-wider">
-            {isEditMode ? '✏️ EDIT BILL' : '🧾 Bill Summary'}
-          </h2>
-          <div className="flex items-center gap-2 mt-1">
-            {isEditingDate ? (
-              <input
-                ref={dateInputRef}
-                type="datetime-local"
-                value={billDate}
-                onChange={handleDateChange}
-                onBlur={handleDateBlur}
-                className="text-xs text-gray-600 font-mono border border-gray-300 rounded px-1 py-0.5 focus:border-blue-500 outline-none"
-                autoFocus
-              />
-            ) : (
-              <div
-                className="text-xs text-gray-600 font-mono cursor-pointer hover:text-blue-600 hover:underline flex items-center gap-1"
-                onClick={handleEditDateClick}
-              >
-                📅 {currentDateTime}
-                <span className="text-blue-500 text-xs">✎</span>
+      {/* Cart Drawer */}
+      <div className={`
+        fixed top-0 right-0 bottom-0 z-50 w-[90%] max-w-[380px] bg-white shadow-2xl transition-transform duration-300 transform overflow-hidden
+        ${isCartOpen ? "translate-x-0" : "translate-x-full"}
+      `}>
+        <div className="flex flex-col h-full w-full relative">
+          {/* Cart Header */}
+          <div className="bg-gray-50 border-b sticky top-0 z-10">
+            <div className="flex justify-between items-center p-4 gap-3">
+              <div className="flex-1 min-w-0">
+                <h2 className="text-sm md:text-base font-bold text-black uppercase tracking-wider">
+                  {isEditMode ? '✏️ EDIT BILL' : '🧾 Bill Summary'}
+                </h2>
+                <div className="flex items-center gap-2 mt-1">
+                  {isEditingDate ? (
+                    <input
+                      ref={dateInputRef}
+                      type="datetime-local"
+                      value={billDate}
+                      onChange={handleDateChange}
+                      onBlur={handleDateBlur}
+                      className="text-xs text-gray-600 font-mono border border-gray-300 rounded px-1 py-0.5 focus:border-blue-500 outline-none"
+                      autoFocus
+                    />
+                  ) : (
+                    <div
+                      className="text-xs text-gray-600 font-mono cursor-pointer hover:text-blue-600 hover:underline flex items-center gap-1"
+                      onClick={handleEditDateClick}
+                    >
+                      📅 {currentDateTime || formatDateTime(new Date())}
+                      <span className="text-blue-500 text-xs">✎</span>
+                    </div>
+                  )}
+                </div>
               </div>
+              <button
+                onClick={closeCart}
+                className="bg-red-500 hover:bg-red-600 text-white rounded-lg font-bold transition-colors shadow-md active:scale-95 whitespace-nowrap flex-shrink-0 px-4 py-2 text-sm z-20 relative"
+                aria-label="Close cart"
+              >
+                ✕ CLOSE
+              </button>
+            </div>
+          </div>
+
+          {/* Cart Items List with Price Edit */}
+          <div className="flex-1 overflow-y-auto p-3 space-y-2 bg-white">
+            {cart.length === 0 ? (
+              <div className="h-full flex flex-col items-center justify-center opacity-40">
+                <span className="text-3xl mb-2">🛍️</span>
+                <p className="font-bold text-sm text-black uppercase">No items in cart</p>
+              </div>
+            ) : (
+              cart.map(item => (
+                <div key={`cart-${item.product}`} className="bg-gray-50 rounded-lg p-3 border border-gray-200">
+                  <div className="flex justify-between items-start mb-1">
+                    <h3 className="text-sm font-bold text-black leading-tight flex-1 pr-2">{item.name}</h3>
+                    <button
+                      onClick={() => removeItem(item.product)}
+                      className="text-red-500 font-bold text-sm hover:text-red-700 flex-shrink-0 ml-2"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                  <div className="flex justify-between items-end mt-2">
+                    <div className="flex items-center gap-2">
+                      <span className="bg-blue-600 text-white font-bold px-2 py-0.5 rounded text-xs">x{formatQuantityDisplay(item.qty)}</span>
+                      <button
+                        onClick={() => handleEditPrice(item)}
+                        className="text-gray-600 text-xs hover:text-blue-600 hover:underline flex items-center gap-1"
+                      >
+                        @ {formatCurrency(item.price)}
+                        <span className="text-blue-500 text-[10px]">✎</span>
+                      </button>
+                    </div>
+                    <div className="text-base font-bold text-black">{formatCurrency(item.total)}</div>
+                  </div>
+                </div>
+              ))
             )}
           </div>
-        </div>
-        <button
-          onClick={closeCart}
-          className="bg-red-500 hover:bg-red-600 text-white rounded-lg font-bold transition-colors shadow-md active:scale-95 whitespace-nowrap flex-shrink-0 px-4 py-2 text-sm z-20 relative"
-          aria-label="Close cart"
-        >
-          ✕ CLOSE
-        </button>
-      </div>
-    </div>
 
-    {/* Cart Items List */}
-    <div className="flex-1 overflow-y-auto p-3 space-y-2 bg-white">
-      {cart.length === 0 ? (
-        <div className="h-full flex flex-col items-center justify-center opacity-40">
-          <span className="text-3xl mb-2">🛍️</span>
-          <p className="font-bold text-sm text-black uppercase">No items in cart</p>
-        </div>
-      ) : (
-        cart.map(item => (
-          <div key={`cart-${item.product}`} className="bg-gray-50 rounded-lg p-3 border border-gray-200">
-            <div className="flex justify-between items-start mb-1">
-              <h3 className="text-sm font-bold text-black leading-tight flex-1 pr-2">{item.name}</h3>
-              <button 
-                onClick={() => removeItem(item.product)} 
-                className="text-red-500 font-bold text-sm hover:text-red-700 flex-shrink-0 ml-2"
-              >
-                ✕
-              </button>
-            </div>
-            <div className="flex justify-between items-end mt-2">
-              <div className="flex items-center gap-2">
-                <span className="bg-blue-600 text-white font-bold px-2 py-0.5 rounded text-xs">x{item.qty}</span>
-                <span className="text-gray-600 text-xs">@ {formatCurrency(item.price)}</span>
-              </div>
-              <div className="text-base font-bold text-black">{formatCurrency(item.total)}</div>
-            </div>
-          </div>
-        ))
-      )}
-    </div>
-
-    {/* Billing Footer */}
-    <div className="p-4 bg-gray-50 border-t sticky bottom-0 z-10">
-      {/* Customer Selection Section */}
-      <div className="space-y-2">
-        <div className="flex justify-between items-center">
-          <span className="text-xs font-bold text-black">CUSTOMER</span>
-          {!selectedCustomer && (
-            <button
-              onClick={() => setShowCustomerModal(true)}
-              className="text-xs bg-blue-600 text-white px-2 py-1 rounded font-bold"
-            >
-              + ADD CUSTOMER
-            </button>
-          )}
-        </div>
-
-        {selectedCustomer ? (
-          <div className="bg-blue-50 border border-blue-200 rounded-lg p-2">
-            <div className="flex justify-between items-start">
-              <div>
-                <div className="font-bold text-sm text-blue-900">{selectedCustomer.name}</div>
-                {selectedCustomer.phone && (
-                  <div className="text-xs text-blue-700">📞 {selectedCustomer.phone}</div>
-                )}
-                {selectedCustomer.email && (
-                  <div className="text-xs text-blue-700">✉️ {selectedCustomer.email}</div>
-                )}
-                {selectedCustomer._id && (
-                  <div className="text-xs text-green-600 mt-1">✓ Registered Customer</div>
+          {/* Billing Footer */}
+          <div className="p-4 bg-gray-50 border-t sticky bottom-0 z-10">
+            {/* Customer Selection */}
+            <div className="space-y-2">
+              <div className="flex justify-between items-center">
+                <span className="text-xs font-bold text-black">CUSTOMER</span>
+                {!selectedCustomer && (
+                  <button
+                    onClick={() => setShowCustomerModal(true)}
+                    className="text-xs bg-blue-600 text-white px-2 py-1 rounded font-bold"
+                  >
+                    + ADD CUSTOMER
+                  </button>
                 )}
               </div>
-              <button
-                onClick={handleRemoveCustomer}
-                className="text-red-500 text-xs font-bold hover:text-red-700"
-              >
-                Change
-              </button>
+
+              {selectedCustomer ? (
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-2">
+                  <div className="flex justify-between items-start">
+                    <div>
+                      <div className="font-bold text-sm text-blue-900">{selectedCustomer.name}</div>
+                      {selectedCustomer.phone && (
+                        <div className="text-xs text-blue-700">📞 {selectedCustomer.phone}</div>
+                      )}
+                      {selectedCustomer.email && (
+                        <div className="text-xs text-blue-700">✉️ {selectedCustomer.email}</div>
+                      )}
+                      {selectedCustomer._id && (
+                        <div className="text-xs text-green-600 mt-1">✓ Registered Customer</div>
+                      )}
+                    </div>
+                    <button
+                      onClick={handleRemoveCustomer}
+                      className="text-red-500 text-xs font-bold hover:text-red-700"
+                    >
+                      Change
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="bg-gray-100 border border-gray-200 rounded-lg p-2 text-center">
+                  <span className="text-xs text-gray-600">Walk-in Customer</span>
+                  <div className="text-xs text-orange-500 mt-1">⚠️ Credit not available</div>
+                </div>
+              )}
             </div>
-          </div>
-        ) : (
-          <div className="bg-gray-100 border border-gray-200 rounded-lg p-2 text-center">
-            <span className="text-xs text-gray-600">Walk-in Customer</span>
-            <div className="text-xs text-orange-500 mt-1">⚠️ Credit not available</div>
-          </div>
-        )}
-      </div>
 
-      <div className="space-y-2 mt-3">
-        <div className="flex justify-between text-gray-600 text-xs font-bold uppercase">
-          <span>Subtotal</span>
-          <span>{formatCurrency(subtotal)}</span>
-        </div>
+            <div className="space-y-2 mt-3">
+              <div className="flex justify-between text-gray-600 text-xs font-bold uppercase">
+                <span>Subtotal</span>
+                <span>{formatCurrency(subtotal)}</span>
+              </div>
 
-        {/* Discount with +/- buttons */}
-        <div className="flex items-center justify-between gap-3">
-          <span className="text-xs font-bold text-black">DISCOUNT %</span>
-          <div className="flex items-center gap-1">
-            <button
-              onClick={decrementDiscount}
-              disabled={discount <= 0}
-              className="bg-red-500 hover:bg-red-600 disabled:bg-gray-300 text-white font-bold w-6 h-6 rounded text-sm"
-            >
-              -
-            </button>
-            <input
-              type="number"
-              className="w-14 p-1 border border-gray-300 rounded text-center text-sm font-bold text-black outline-none focus:border-blue-500"
-              value={discount}
-              onChange={handleDiscountChange}
-              step="1"
-              min="0"
-              max="100"
-            />
-            <button
-              onClick={incrementDiscount}
-              disabled={discount >= 100}
-              className="bg-green-500 hover:bg-green-600 disabled:bg-gray-300 text-white font-bold w-6 h-6 rounded text-sm"
-            >
-              +
-            </button>
-            <span className="text-xs font-bold text-gray-600">%</span>
-          </div>
-        </div>
+              {/* Discount */}
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-xs font-bold text-black">DISCOUNT %</span>
+                <div className="flex items-center gap-1">
+                  <button
+                    onClick={decrementDiscount}
+                    disabled={discount <= 0}
+                    className="bg-red-500 hover:bg-red-600 disabled:bg-gray-300 text-white font-bold w-6 h-6 rounded text-sm"
+                  >
+                    -
+                  </button>
+                  <input
+                    type="number"
+                    className="w-14 p-1 border border-gray-300 rounded text-center text-sm font-bold text-black outline-none focus:border-blue-500"
+                    value={discount}
+                    onChange={handleDiscountChange}
+                    step="1"
+                    min="0"
+                    max="100"
+                  />
+                  <button
+                    onClick={incrementDiscount}
+                    disabled={discount >= 100}
+                    className="bg-green-500 hover:bg-green-600 disabled:bg-gray-300 text-white font-bold w-6 h-6 rounded text-sm"
+                  >
+                    +
+                  </button>
+                  <span className="text-xs font-bold text-gray-600">%</span>
+                </div>
+              </div>
 
-        {/* Payment Method as Buttons */}
-        <div className="space-y-1">
-          <span className="text-xs font-bold text-black block">PAYMENT</span>
-          <div className="grid grid-cols-2 md:grid-cols-3 gap-1.5">
-            {getAvailablePaymentMethods.map(method => (
+              {/* Payment Methods */}
+              <div className="space-y-1">
+                <span className="text-xs font-bold text-black block">PAYMENT</span>
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-1.5">
+                  {getAvailablePaymentMethods.map(method => (
+                    <button
+                      key={`payment-${method.id}`}
+                      onClick={() => setPaymentMethod(method.id)}
+                      className={`py-1.5 px-2 rounded-lg text-xs font-bold text-white transition-all ${paymentMethod === method.id
+                        ? `${method.color} ring-1 ring-offset-1 ring-blue-500`
+                        : 'bg-gray-400 hover:bg-gray-500'
+                        }`}
+                    >
+                      {method.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            <div className="pt-3 mt-3 border-t border-gray-300">
+              {/* Total Items */}
+              <div className="flex justify-between items-center mb-1">
+                <span className="text-xs font-bold text-gray-500 uppercase">Total Items</span>
+                <span className="text-sm font-bold text-black">{formatQuantityDisplay(totalItemCount)}</span>
+              </div>
+
+              {/* Net Amount */}
+              <div className="flex justify-between items-center mb-3">
+                <span className="text-xs font-bold text-gray-400 uppercase">Net Amount</span>
+                <span className="text-xl font-bold text-blue-700">{formatCurrency(total)}</span>
+              </div>
+
+              {/* Checkout Button */}
               <button
-                key={`payment-${method.id}`}
-                onClick={() => setPaymentMethod(method.id)}
-                className={`py-1.5 px-2 rounded-lg text-xs font-bold text-white transition-all ${paymentMethod === method.id
-                  ? `${method.color} ring-1 ring-offset-1 ring-blue-500`
-                  : 'bg-gray-400 hover:bg-gray-500'
+                disabled={checkoutLoading || cart.length === 0 || (paymentMethod === 'credit' && !isRegisteredCustomer)}
+                onClick={checkout}
+                className={`w-full text-white py-2.5 rounded-xl font-bold text-sm shadow-md active:scale-95 disabled:bg-gray-400 transition-all ${paymentMethod === 'credit' && isRegisteredCustomer ? 'bg-orange-600 hover:bg-orange-700' : 'bg-blue-700 hover:bg-blue-800'
                   }`}
               >
-                {method.label}
+                {checkoutLoading ? "PROCESSING..." :
+                  paymentMethod === 'credit' && !isRegisteredCustomer ? "ADD CUSTOMER FOR CREDIT" :
+                    paymentMethod === 'credit' ? "PROCESS CREDIT PAYMENT" :
+                      isEditMode ? "UPDATE BILL" : "FINISH ORDER"}
               </button>
-            ))}
+            </div>
           </div>
         </div>
       </div>
-
-      <div className="pt-3 mt-3 border-t border-gray-300">
-        {/* Total Items */}
-        <div className="flex justify-between items-center mb-1">
-          <span className="text-xs font-bold text-gray-500 uppercase">Total Items</span>
-          <span className="text-sm font-bold text-black">{totalItemCount}</span>
-        </div>
-
-        {/* Net Amount */}
-        <div className="flex justify-between items-center mb-3">
-          <span className="text-xs font-bold text-gray-400 uppercase">Net Amount</span>
-          <span className="text-xl font-bold text-blue-700">{formatCurrency(total)}</span>
-        </div>
-
-        {/* Checkout/Update Button */}
-        <button
-          disabled={checkoutLoading || cart.length === 0 || (paymentMethod === 'credit' && !isRegisteredCustomer)}
-          onClick={checkout}
-          className={`w-full text-white py-2.5 rounded-xl font-bold text-sm shadow-md active:scale-95 disabled:bg-gray-400 transition-all ${paymentMethod === 'credit' && isRegisteredCustomer ? 'bg-orange-600 hover:bg-orange-700' : 'bg-blue-700 hover:bg-blue-800'
-            }`}
-        >
-          {checkoutLoading ? "PROCESSING..." :
-            paymentMethod === 'credit' && !isRegisteredCustomer ? "ADD CUSTOMER FOR CREDIT" :
-              paymentMethod === 'credit' ? "PROCESS CREDIT PAYMENT" :
-                isEditMode ? "UPDATE BILL" : "FINISH ORDER"}
-        </button>
-      </div>
-    </div>
-  </div>
-</div>
     </div>
   );
 };

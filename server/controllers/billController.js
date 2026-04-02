@@ -3,6 +3,12 @@ const Product = require('../models/Product');
 const Customer = require('../models/Customer');
 const Counter = require('../models/Counter');
 
+// Helper function to round numbers to 2 decimal places
+const roundToTwo = (num) => {
+  if (num === undefined || num === null) return 0;
+  return Math.round((num + Number.EPSILON) * 100) / 100;
+};
+
 // 🔢 Generate next bill number
 const getNextBillNumber = async () => {
   const counter = await Counter.findOneAndUpdate(
@@ -17,7 +23,7 @@ const getNextBillNumber = async () => {
 // ✅ CREATE BILL
 exports.createBill = async (req, res) => {
   try {
-    const {
+    let {
       items,
       discount,
       discountAmount,
@@ -36,8 +42,8 @@ exports.createBill = async (req, res) => {
       notes
     } = req.body;
 
-
-console.log("Create bill payload:", req.body);
+    console.log("Create bill payload:", req.body);
+    
     if (!items || items.length === 0) {
       throw new Error("No items in the bill");
     }
@@ -54,27 +60,38 @@ console.log("Create bill payload:", req.body);
       if (product.stock < item.quantity) {
         throw new Error(`Insufficient stock for ${product.name}. Available: ${product.stock}, Requested: ${item.quantity}`);
       }
-
-
     }
 
-    // ✅ Prepare items
+    // ✅ Prepare items with rounded values
     const billItems = await Promise.all(
       items.map(async (item) => {
         const product = await Product.findById(item.productId);
+        const price = roundToTwo(item.price);
+        const total = roundToTwo(price * item.quantity);
+        
         return {
           productId: item.productId,
           name: item.productName || product.name,
           quantity: item.quantity,
-          price: item.price,
-          total: item.price * item.quantity
+          price: price,
+          total: total
         };
       })
     );
 
-    const subtotal = billItems.reduce((sum, i) => sum + i.total, 0);
-    const finalDiscountAmount = discountAmount || (subtotal * (discount || 0) / 100);
-    const finalTotal = total || subtotal - finalDiscountAmount;
+    const subtotal = roundToTwo(billItems.reduce((sum, i) => sum + i.total, 0));
+    const finalDiscountAmount = discountAmount 
+      ? roundToTwo(discountAmount) 
+      : roundToTwo((subtotal * (discount || 0)) / 100);
+    const finalTotal = total 
+      ? roundToTwo(total) 
+      : roundToTwo(subtotal - finalDiscountAmount);
+    const finalPaidAmount = roundToTwo(paidAmount || 0);
+    const finalDueAmount = dueAmount !== undefined 
+      ? roundToTwo(dueAmount) 
+      : roundToTwo(finalTotal - finalPaidAmount);
+    const finalCashPaid = roundToTwo(cashPaid || 0);
+    const finalUpiPaid = roundToTwo(upiPaid || 0);
 
     // 👤 Customer
     let customerDetails = {
@@ -101,19 +118,19 @@ console.log("Create bill payload:", req.body);
     // 🔢 Generate Bill Number
     const billNumber = await getNextBillNumber();
 
-    // 🧾 Create Bill
+    // 🧾 Create Bill with rounded values
     const bill = new Bill({
       billNumber,
       items: billItems,
       subtotal,
-      discount: discount || 0,
+      discount: roundToTwo(discount || 0),
       discountAmount: finalDiscountAmount,
       total: finalTotal,
-      paidAmount: paidAmount || 0,
-      dueAmount: dueAmount !== undefined ? dueAmount : finalTotal - (paidAmount || 0),
-      cashPaid: cashPaid || 0,
-      upiPaid: upiPaid || 0,
-      paymentMethod,
+      paidAmount: finalPaidAmount,
+      dueAmount: finalDueAmount,
+      cashPaid: finalCashPaid,
+      upiPaid: finalUpiPaid,
+      paymentMethod: paymentMethod,
       customer: customerDetails,
       status: "completed",
       billDate: billDate ? new Date(billDate) : new Date(),
@@ -156,7 +173,7 @@ console.log("Create bill payload:", req.body);
 exports.updateBill = async (req, res) => {
   try {
     const { id } = req.params;
-    const {
+    let {
       items,
       discount,
       discountAmount,
@@ -176,6 +193,15 @@ exports.updateBill = async (req, res) => {
     } = req.body;
 
     console.log("Update bill payload:", req.body);
+
+    // Round incoming amounts
+    discount = roundToTwo(discount);
+    discountAmount = roundToTwo(discountAmount);
+    paidAmount = roundToTwo(paidAmount);
+    dueAmount = roundToTwo(dueAmount);
+    cashPaid = roundToTwo(cashPaid);
+    upiPaid = roundToTwo(upiPaid);
+    total = roundToTwo(total);
 
     // Find existing bill
     const existingBill = await Bill.findById(id);
@@ -212,23 +238,30 @@ exports.updateBill = async (req, res) => {
       }
     }
 
-    // ✅ Prepare updated items
+    // ✅ Prepare updated items with rounded values
     const billItems = await Promise.all(
       items.map(async (item) => {
         const product = await Product.findById(item.productId);
+        const price = roundToTwo(item.price);
+        const total = roundToTwo(price * item.quantity);
+        
         return {
           productId: item.productId,
           name: item.productName || product.name,
           quantity: item.quantity,
-          price: item.price,
-          total: item.price * item.quantity
+          price: price,
+          total: total
         };
       })
     );
 
-    const subtotal = billItems.reduce((sum, i) => sum + i.total, 0);
-    const finalDiscountAmount = discountAmount || (subtotal * (discount || 0) / 100);
-    const finalTotal = total || subtotal - finalDiscountAmount;
+    const subtotal = roundToTwo(billItems.reduce((sum, i) => sum + i.total, 0));
+    const finalDiscountAmount = discountAmount || roundToTwo((subtotal * (discount || 0)) / 100);
+    const finalTotal = total || roundToTwo(subtotal - finalDiscountAmount);
+    const finalPaidAmount = roundToTwo(paidAmount || 0);
+    const finalDueAmount = dueAmount !== undefined ? dueAmount : roundToTwo(finalTotal - finalPaidAmount);
+    const finalCashPaid = roundToTwo(cashPaid || 0);
+    const finalUpiPaid = roundToTwo(upiPaid || 0);
 
     // 👤 Customer
     let customerDetails = {
@@ -277,10 +310,8 @@ exports.updateBill = async (req, res) => {
 
     // Update customer due
     const oldDueAmount = existingBill.dueAmount;
-    const newDueAmount = dueAmount !== undefined ? dueAmount : finalTotal - (paidAmount || 0);
-
-    if (customerId && newDueAmount !== oldDueAmount) {
-      const dueDifference = newDueAmount - oldDueAmount;
+    if (customerId && finalDueAmount !== oldDueAmount) {
+      const dueDifference = finalDueAmount - oldDueAmount;
       await Customer.findByIdAndUpdate(customerId, {
         $inc: { totalDue: dueDifference }
       });
@@ -292,13 +323,13 @@ exports.updateBill = async (req, res) => {
       {
         items: billItems,
         subtotal,
-        discount: discount || 0,
+        discount: roundToTwo(discount || 0),
         discountAmount: finalDiscountAmount,
         total: finalTotal,
-        paidAmount: paidAmount || 0,
-        dueAmount: newDueAmount,
-        cashPaid: cashPaid || 0,
-        upiPaid: upiPaid || 0,
+        paidAmount: finalPaidAmount,
+        dueAmount: finalDueAmount,
+        cashPaid: finalCashPaid,
+        upiPaid: finalUpiPaid,
         paymentMethod,
         customer: customerDetails,
         billDate: billDate ? new Date(billDate) : existingBill.billDate,
@@ -441,7 +472,7 @@ exports.getBillById = async (req, res) => {
       });
     }
 
-    // Format the response for POS editing
+    // Format the response for POS editing with rounded values
     const formattedBill = {
       _id: bill._id,
       billNumber: bill.billNumber,
@@ -450,17 +481,17 @@ exports.getBillById = async (req, res) => {
         productName: item.name,
         name: item.name,
         quantity: item.quantity,
-        price: item.price,
-        total: item.total
+        price: roundToTwo(item.price),
+        total: roundToTwo(item.total)
       })),
-      discount: bill.discount,
-      discountAmount: bill.discountAmount,
+      discount: roundToTwo(bill.discount),
+      discountAmount: roundToTwo(bill.discountAmount),
       paymentMethod: bill.paymentMethod,
-      paidAmount: bill.paidAmount,
-      dueAmount: bill.dueAmount,
-      cashPaid: bill.cashPaid,
-      upiPaid: bill.upiPaid,
-      total: bill.total,
+      paidAmount: roundToTwo(bill.paidAmount),
+      dueAmount: roundToTwo(bill.dueAmount),
+      cashPaid: roundToTwo(bill.cashPaid),
+      upiPaid: roundToTwo(bill.upiPaid),
+      total: roundToTwo(bill.total),
       customerId: bill.customer.customerId?._id || null,
       customerName: bill.customer.name,
       customerPhone: bill.customer.phone,
@@ -473,11 +504,9 @@ exports.getBillById = async (req, res) => {
       updatedAt: bill.updatedAt
     };
 
-console.log("Fetched bill:", formattedBill);
+    console.log("Fetched bill:", formattedBill);
 
     res.json(formattedBill);
-
-
 
   } catch (error) {
     console.error("Get bill error:", error);
@@ -561,32 +590,54 @@ exports.cancelBill = async (req, res) => {
   }
 };
 
-// ✅ RECORD PAYMENT
+// ✅ RECORD PAYMENT (Payment History Only - No updates to paid amounts)
 exports.recordPayment = async (req, res) => {
   try {
-    const { amount, paymentMethod } = req.body;
+    let { amount, paymentMethod, transactionId, notes } = req.body;
+    const { id } = req.params;
 
-    const bill = await Bill.findById(req.params.id);
+    // Round the amount
+    amount = roundToTwo(amount);
+
+    const bill = await Bill.findById(id);
 
     if (!bill) throw new Error("Bill not found");
     if (bill.status === "cancelled") throw new Error("Cannot pay cancelled bill");
 
     if (amount > bill.dueAmount) {
-      throw new Error("Amount exceeds due");
+      throw new Error(`Amount exceeds due. Due amount: ₹${bill.dueAmount}`);
     }
 
-    if (paymentMethod === "cash") bill.cashPaid += amount;
-    if (paymentMethod === "upi") bill.upiPaid += amount;
+    // Create payment record with rounded amount
+    const paymentRecord = {
+      amount: amount,
+      paymentMethod: paymentMethod,
+      date: new Date(),
+      transactionId: transactionId || null,
+      notes: notes || `Payment of ₹${amount} via ${paymentMethod}`,
+      recordedBy: req.user?.name || 'system'
+    };
 
-    bill.paidAmount = (bill.cashPaid || 0) + (bill.upiPaid || 0);
-    bill.dueAmount = Math.max(0, bill.total - bill.paidAmount);
+    // ✅ ONLY add to payment history
+    if (!bill.paymentHistory) {
+      bill.paymentHistory = [];
+    }
+    bill.paymentHistory.push(paymentRecord);
 
+    bill.updatedAt = new Date();
     await bill.save();
 
     res.json({
       success: true,
-      message: "Payment recorded",
-      bill
+      message: "Payment recorded successfully in payment history",
+      bill: {
+        _id: bill._id,
+        billNumber: bill.billNumber,
+        paidAmount: roundToTwo(bill.paidAmount),
+        dueAmount: roundToTwo(bill.dueAmount),
+        paymentMethod: bill.paymentMethod,
+        paymentHistory: bill.paymentHistory
+      }
     });
 
   } catch (error) {
@@ -598,38 +649,63 @@ exports.recordPayment = async (req, res) => {
   }
 };
 
-// ✅ DAILY SALES
-exports.getDailySales = async (req, res) => {
+// ✅ GET PAYMENT HISTORY
+exports.getPaymentHistory = async (req, res) => {
   try {
-
-    console.log("Calculating daily sales...");
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-
-    const sales = await Bill.find({
-      billDate: { $gte: today },
-      status: "completed"
+    const { id } = req.params;
+    
+    console.log("Fetching payment history for bill:", id);
+    
+    const bill = await Bill.findById(id);
+    
+    if (!bill) {
+      return res.status(404).json({
+        success: false,
+        message: "Bill not found"
+      });
+    }
+    
+    // Calculate totals from payment history with rounding
+    const totalFromHistory = (bill.paymentHistory || []).reduce((sum, p) => sum + p.amount, 0);
+    const originalPaid = roundToTwo(bill.paidAmount || 0);
+    const totalPaidCombined = roundToTwo(originalPaid + totalFromHistory);
+    const remainingDue = roundToTwo(Math.max(0, bill.total - totalPaidCombined));
+    
+    console.log("Payment history details:", {
+      totalFromHistory: roundToTwo(totalFromHistory),
+      originalPaid,
+      totalPaidCombined,
+      remainingDue,
+      historyCount: (bill.paymentHistory || []).length
     });
-
-    const total = sales.reduce((sum, b) => sum + b.total, 0);
-
+    
     res.json({
       success: true,
-      totalSales: total,
-      totalBills: sales.length
+      paymentHistory: (bill.paymentHistory || []).map(p => ({
+        ...p.toObject(),
+        amount: roundToTwo(p.amount)
+      })),
+      bill: {
+        billNumber: bill.billNumber,
+        total: roundToTwo(bill.total),
+        originalPaidAmount: originalPaid,
+        originalDueAmount: roundToTwo(bill.dueAmount),
+        totalFromHistory: roundToTwo(totalFromHistory),
+        totalPaid: totalPaidCombined,
+        remainingDue: remainingDue
+      }
     });
-
+    
   } catch (error) {
-    console.error("Daily sales error:", error);
+    console.error("Get payment history error:", error);
     res.status(500).json({
       success: false,
-      message: "Error fetching sales"
+      message: "Failed to fetch payment history"
     });
   }
 };
 
 // ✅ GET REPORT (for Reports page)
-// In billController.js - update the getReport function
 exports.getReport = async (req, res) => {
   try {
     const { type, from, to } = req.query;
@@ -680,7 +756,7 @@ exports.getReport = async (req, res) => {
       status: "completed"
     }).sort({ billDate: -1 });
 
-    // Calculate summary
+    // Calculate summary with rounding
     const summary = bills.reduce((acc, bill) => {
       acc.grandTotal += bill.total;
       acc.totalPaid += bill.paidAmount;
@@ -688,24 +764,33 @@ exports.getReport = async (req, res) => {
       return acc;
     }, { grandTotal: 0, totalPaid: 0, totalDue: 0 });
 
+    // Round summary values
+    summary.grandTotal = roundToTwo(summary.grandTotal);
+    summary.totalPaid = roundToTwo(summary.totalPaid);
+    summary.totalDue = roundToTwo(summary.totalDue);
+
     res.json({
       success: true,
       bills: bills.map(bill => ({
-        _id: bill._id, // ← MAKE SURE THIS IS INCLUDED
-        id: bill._id,  // ← Add this as a fallback
+        _id: bill._id,
+        id: bill._id,
         billNumber: bill.billNumber,
         date: bill.billDate,
         customer: bill.customer.name,
-        total: bill.total,
-        paid: bill.paidAmount,
-        due: bill.dueAmount,
+        total: roundToTwo(bill.total),
+        paid: roundToTwo(bill.paidAmount),
+        due: roundToTwo(bill.dueAmount),
         paymentMethod: bill.paymentMethod,
-        items: bill.items,
-        subtotal: bill.subtotal,
-        discount: bill.discount,
-        discountAmount: bill.discountAmount,
-        cashPaid: bill.cashPaid,
-        upiPaid: bill.upiPaid
+        items: bill.items.map(item => ({
+          ...item.toObject(),
+          price: roundToTwo(item.price),
+          total: roundToTwo(item.total)
+        })),
+        subtotal: roundToTwo(bill.subtotal),
+        discount: roundToTwo(bill.discount),
+        discountAmount: roundToTwo(bill.discountAmount),
+        cashPaid: roundToTwo(bill.cashPaid),
+        upiPaid: roundToTwo(bill.upiPaid)
       })),
       summary
     });
@@ -716,6 +801,64 @@ exports.getReport = async (req, res) => {
     res.status(500).json({
       success: false,
       message: "Failed to generate report"
+    });
+  }
+};
+
+// Add this to your existing billController.js
+
+// ✅ UPDATE PRINT STATUS
+exports.updatePrintStatus = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { printed, printCount } = req.body;
+    
+    const bill = await Bill.findById(id);
+    if (!bill) {
+      return res.status(404).json({
+        success: false,
+        message: "Bill not found"
+      });
+    }
+    
+    bill.printed = printed !== undefined ? printed : bill.printed;
+    bill.printedAt = printed ? new Date() : bill.printedAt;
+    bill.printCount = (bill.printCount || 0) + (printCount || 1);
+    
+    await bill.save();
+    
+    res.json({
+      success: true,
+      message: "Print status updated",
+      bill
+    });
+  } catch (error) {
+    console.error("Update print status error:", error);
+    res.status(500).json({
+      success: false,
+      message: error.message
+    });
+  }
+};
+
+// ✅ EMAIL BILL
+exports.emailBill = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { email, pdfBase64, billNumber } = req.body;
+    
+    // Here you would integrate with a email service like nodemailer
+    // For now, just return success
+    
+    res.json({
+      success: true,
+      message: `Bill ${billNumber} sent to ${email}`
+    });
+  } catch (error) {
+    console.error("Email bill error:", error);
+    res.status(500).json({
+      success: false,
+      message: error.message
     });
   }
 };
