@@ -223,7 +223,7 @@ const Layout = () => {
           onClick={() => { setOpenProducts(false); setOpenReports(false); setOpenSidebar(false); }}
           className="font-bold text-lg tracking-wide active:opacity-70 transition-opacity"
         >
-          My App
+          Bill Mate 
         </NavLink>
 
         {/* Back button — right corner, hidden on home */}
