@@ -88,7 +88,7 @@ const ReportsMenu = ({ open, toggle, onNavigate }) => (
 
     <div
       className="overflow-hidden transition-all duration-200"
-      style={{ maxHeight: open ? "200px" : "0px" }}
+      style={{ maxHeight: open ? "300px" : "0px" }}
     >
       <div className="ml-4 mt-1 flex flex-col gap-1 pb-1">
         <NavLink to="/reports" className={({ isActive }) => subItemClass(isActive)} onClick={onNavigate}>
@@ -96,6 +96,9 @@ const ReportsMenu = ({ open, toggle, onNavigate }) => (
         </NavLink>
         <NavLink to="/items-report" className={({ isActive }) => subItemClass(isActive)} onClick={onNavigate}>
           📦 Items Report
+        </NavLink>
+        <NavLink to="/payment-report" className={({ isActive }) => subItemClass(isActive)} onClick={onNavigate}>
+          💳 Payment Report
         </NavLink>
       </div>
     </div>

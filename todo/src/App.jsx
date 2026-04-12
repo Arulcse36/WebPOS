@@ -12,6 +12,7 @@ import Report from "./pages/Report";
 import ItemsReport from './pages/ItemsReport';
 import Company from './pages/Company';
 import Users from './pages/Users';
+import PaymentReport from './pages/PaymentReport';
 import SuperAdminLogin from './pages/SuperAdminLogin';
 import CompanyLogin from './pages/CompanyLogin';
 
@@ -75,7 +76,7 @@ const App = () => {
           isAuthenticated ? (
             <Layout onLogout={handleLogout} user={user} isSuperAdmin={isSuperAdmin} />
           ) : (
-            <Navigate to="/login" replace />  // ✅ Changed from "/admin" to "/login"
+            <Navigate to="/login" replace />
           )
         }>
           {/* Super Admin Routes */}
@@ -99,6 +100,7 @@ const App = () => {
           <Route path="users" element={<Users />} />
           <Route path="reports" element={<Report />} />
           <Route path="items-report" element={<ItemsReport />} />
+          <Route path="payment-report" element={<PaymentReport />} />
           
           {/* Catch all - redirect to dashboard */}
           <Route path="*" element={<Navigate to="/dashboard" replace />} />

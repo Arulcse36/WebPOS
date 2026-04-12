@@ -24,12 +24,18 @@ export const handlePrintBill = async (bill) => {
     bill.subtotal ||
     bill.items?.reduce((sum, item) => sum + item.price * item.quantity, 0) ||
     0;
-  const discountAmount =
-    bill.discountAmount ||
-    (bill.discount ? (subtotal * bill.discount) / 100 : 0);
+  const discountAmount =  bill.discountAmount;
+
+
   const total = bill.total || subtotal - discountAmount;
-  const paid = bill.paid || 0;
-  const due = bill.due || total - paid;
+  const paid = bill.paidOriginal || 0;
+  const due = total - paid;
+
+  console.log("arul:", bill);
+
+  console.log("Printing bill with details:", {
+    company,
+    bill});
 
   const fmt = (num) => Number(num).toFixed(2);
 

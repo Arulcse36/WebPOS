@@ -16,6 +16,8 @@ router.get('/customers', async (req, res) => {
         error: 'Company ID required' 
       });
     }
+
+    console.log('Fetching customers for companyId:', companyId);
     
     // Method 1: Get customers from embedded data in bills (filtered by company)
     const bills = await Bill.find({ companyId }, 'customer.name');

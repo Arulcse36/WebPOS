@@ -897,6 +897,8 @@ const POS = () => {
           paymentMethod: finalPaymentMethod,
           paid: finalPaidAmount,
           due: finalDueAmount,
+          paidOriginal: finalPaidAmount
+
         };
 
         // 🖨️ Trigger print preview after successful save/update

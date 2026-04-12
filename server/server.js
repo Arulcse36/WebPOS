@@ -83,6 +83,10 @@ app.get('/bills/customers', async (req, res) => {
   }
 });
 
+// Add this line with your other routes
+const paymentReportRoutes = require('./routes/paymentReportRoutes');
+app.use('/payment-reports', paymentReportRoutes);
+
 // Server start
 const PORT = process.env.PORT || 5000;
 
