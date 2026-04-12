@@ -88,8 +88,5 @@ const PORT = process.env.PORT || 5000;
 
 app.listen(PORT, "0.0.0.0", () => {
   console.log(`Server running on port ${PORT}`);
-  console.log(`✅ Super Admin Login: http://localhost:${PORT}/admin`);
-  console.log(`✅ Company Login: http://localhost:${PORT}/admin/login`);
-  console.log(`✅ Companies API: http://localhost:${PORT}/companies`);
-  console.log(`✅ Users API: http://localhost:${PORT}/api/users`);
+
 });
