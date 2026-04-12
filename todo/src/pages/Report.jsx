@@ -6,9 +6,6 @@ import { formatDateTime, formatForInput, formatCurrency, formatQuantityDisplay }
 import { roundToTwoDecimals } from '../utils/mathHelpers';
 import { handlePrintBill } from '../utils/printBill';
 
-// On reprint button click:
-<button onClick={() => handlePrintBill(bill)}>Reprint</button>
-
 // Dynamic API URL - works on both mobile and desktop
 const API = import.meta.env.VITE_API_URL;
 
@@ -25,6 +22,14 @@ const Reports = () => {
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  
+  // Get companyId and user role from localStorage
+  const companyId = localStorage.getItem("companyId");
+  const userRole = localStorage.getItem("userType");
+  const isSuperAdmin = localStorage.getItem("isSuperAdmin") === "true";
+  
+  // Determine if user can delete (Super Admin or Company Admin)
+  const canDelete = isSuperAdmin || userRole === 'admin';
   
   // Customer filter states
   const [customerFilter, setCustomerFilter] = useState("");
@@ -44,6 +49,7 @@ const Reports = () => {
   const [paymentHistory, setPaymentHistory] = useState([]);
   const [selectedBillForHistory, setSelectedBillForHistory] = useState(null);
   const [loadingHistory, setLoadingHistory] = useState(false);
+  const [deletingPayment, setDeletingPayment] = useState(false);
 
   // ✅ Set default dates when switching to custom
   useEffect(() => {
@@ -54,11 +60,16 @@ const Reports = () => {
     }
   }, [type]);
 
-  // ✅ Fetch unique customers for filter
+  // ✅ Fetch unique customers for filter (with company filter)
   const fetchCustomers = async () => {
+    if (!companyId) {
+      console.error("No company ID found");
+      return;
+    }
+    
     setLoadingCustomers(true);
     try {
-      const response = await axios.get(`${API}/bills/customers`, {
+      const response = await axios.get(`${API}/bills/customers?companyId=${companyId}`, {
         timeout: 10000
       });
       if (response.data.success) {
@@ -71,17 +82,24 @@ const Reports = () => {
     }
   };
 
-  // Load customers on component mount
+  // Load customers on component mount (only if company exists)
   useEffect(() => {
-    fetchCustomers();
-  }, []);
+    if (companyId) {
+      fetchCustomers();
+    }
+  }, [companyId]);
 
   const fetchReport = async () => {
+    if (!companyId) {
+      setError("No company associated. Please login again.");
+      return;
+    }
+    
     setLoading(true);
     setError(null);
     
     try {
-      let url = `${API}/reports/bills?type=${type}`;
+      let url = `${API}/reports/bills?type=${type}&companyId=${companyId}`;
 
       if (type === "custom") {
         if (!from || !to) {
@@ -156,8 +174,20 @@ const Reports = () => {
   };
 
   useEffect(() => {
-    fetchReport();
-  }, [type, from, to, customerFilter]);
+    if (companyId) {
+      fetchReport();
+    }
+  }, [type, from, to, customerFilter, companyId]);
+
+  // ✅ Redirect if no company
+  useEffect(() => {
+    if (!companyId) {
+      const timer = setTimeout(() => {
+        navigate('/login');
+      }, 3000);
+      return () => clearTimeout(timer);
+    }
+  }, [companyId, navigate]);
 
   // ✅ Format date → 22-Mar-2026
   const formatDate = (date) => {
@@ -185,8 +215,13 @@ const Reports = () => {
     navigate(`/pos/edit/${billId}`);
   };
 
-  // ✅ Handle delete bill
+  // ✅ Handle delete bill (only for admins)
   const handleDeleteBill = async (bill) => {
+    if (!canDelete) {
+      alert("You don't have permission to delete bills");
+      return;
+    }
+    
     const billId = bill._id || bill.id || bill.billId;
     
     if (!billId) {
@@ -196,7 +231,7 @@ const Reports = () => {
     
     if (window.confirm(`Are you sure you want to delete bill #${bill.billNumber}?`)) {
       try {
-        const response = await axios.delete(`${API}/bills/${billId}`, {
+        const response = await axios.delete(`${API}/bills/${billId}?companyId=${companyId}`, {
           timeout: 10000
         });
         
@@ -234,171 +269,209 @@ const Reports = () => {
     handlePrintBill(bill);
   };
 
-const handlePrintPaymentHistory = () => {
-  if (!selectedBillForHistory) return;
-
-  const ESC = '\x1B';
-  const GS  = '\x1D';
-
-  // ── Printer commands ────────────────────────────────────────────────────
-  const INIT        = ESC + '@';
-  const BOLD_ON     = ESC + 'E' + '\x01';
-  const BOLD_OFF    = ESC + 'E' + '\x00';
-  const ALIGN_LEFT  = ESC + 'a' + '\x00';
-  const ALIGN_CTR   = ESC + 'a' + '\x01';
-  const FONT_NORMAL = GS  + '!' + '\x00';
-  const FONT_DBLH   = GS  + '!' + '\x10';
-  const PAPER_CUT   = GS  + 'V' + '\x41' + '\x00';
-
-  const LINE_WIDTH = 48;
-  const SEP        = '-'.repeat(LINE_WIDTH);
-  const SEP2       = '='.repeat(LINE_WIDTH);
-
-  // ── Helpers ──────────────────────────────────────────────────────────────
-  const left = (text) => {
-    const s = String(text);
-    return s.substring(0, LINE_WIDTH) + '\n';
+  // ✅ Handle delete payment record (only for admins)
+  const handleDeletePayment = async (paymentIndex) => {
+    if (!canDelete) {
+      alert("You don't have permission to delete payment records");
+      return;
+    }
+    
+    if (!selectedBillForHistory) return;
+    
+    const payment = paymentHistory[paymentIndex];
+    if (!window.confirm(`Are you sure you want to delete this payment of ${formatCurrency(payment.amount)}?`)) return;
+    
+    setDeletingPayment(true);
+    try {
+      const billId = selectedBillForHistory._id || selectedBillForHistory.id;
+      const response = await axios.delete(
+        `${API}/bills/${billId}/payment/${paymentIndex}?companyId=${companyId}`,
+        { timeout: 10000 }
+      );
+      
+      if (response.data.success) {
+        alert("Payment record deleted successfully!");
+        // Refresh payment history
+        await fetchPaymentHistory(selectedBillForHistory);
+        // Refresh report to update totals
+        fetchReport();
+      } else {
+        alert("Failed to delete payment record");
+      }
+    } catch (err) {
+      console.error("Error deleting payment:", err);
+      alert("Error deleting payment record: " + (err.response?.data?.message || err.message));
+    } finally {
+      setDeletingPayment(false);
+    }
   };
 
-  const twoCol = (l, r, width = LINE_WIDTH) => {
-    const ls = String(l);
-    const rs = String(r);
-    const spaces = Math.max(1, width - ls.length - rs.length);
-    return ls + ' '.repeat(spaces) + rs + '\n';
-  };
+  const handlePrintPaymentHistory = () => {
+    if (!selectedBillForHistory) return;
 
-  const fmtAmt = (amt) => {
-    const n = Number(amt);
-    return isNaN(n) ? '0.00' : n.toFixed(2);
-  };
+    const ESC = '\x1B';
+    const GS  = '\x1D';
 
-  const fmtDate = (d) =>
-    new Date(d).toLocaleDateString('en-GB', {
-      day: '2-digit', month: 'short', year: 'numeric'
-    });
+    // ── Printer commands ────────────────────────────────────────────────────
+    const INIT        = ESC + '@';
+    const BOLD_ON     = ESC + 'E' + '\x01';
+    const BOLD_OFF    = ESC + 'E' + '\x00';
+    const ALIGN_LEFT  = ESC + 'a' + '\x00';
+    const ALIGN_CTR   = ESC + 'a' + '\x01';
+    const FONT_NORMAL = GS  + '!' + '\x00';
+    const FONT_DBLH   = GS  + '!' + '\x10';
+    const PAPER_CUT   = GS  + 'V' + '\x41' + '\x00';
 
-  const fmtTime = (d) =>
-    new Date(d).toLocaleTimeString('en-IN', {
-      hour: '2-digit', minute: '2-digit', hour12: true
-    });
+    const LINE_WIDTH = 48;
+    const SEP        = '-'.repeat(LINE_WIDTH);
+    const SEP2       = '='.repeat(LINE_WIDTH);
 
-  // ── Build receipt ─────────────────────────────────────────────────────────
-  let p = '';
-  p += INIT;
-  p += FONT_NORMAL;
+    // ── Helpers ──────────────────────────────────────────────────────────────
+    const left = (text) => {
+      const s = String(text);
+      return s.substring(0, LINE_WIDTH) + '\n';
+    };
 
-  // ── HEADER ───────────────────────────────────────────────────────────────
-  p += ALIGN_CTR;
-  p += FONT_DBLH;
-  p += 'YOUR SHOP NAME\n';
-  p += FONT_NORMAL;
-  p += '123 Main Street, City - 600001\n';
-  p += 'Ph: +91 98765 43210\n';
-  p += 'GST: 33ABCDE1234F1Z5\n';
-  p += SEP + '\n';
-  p += BOLD_ON + 'PAYMENT HISTORY\n' + BOLD_OFF;
-  p += SEP + '\n';
+    const twoCol = (l, r, width = LINE_WIDTH) => {
+      const ls = String(l);
+      const rs = String(r);
+      const spaces = Math.max(1, width - ls.length - rs.length);
+      return ls + ' '.repeat(spaces) + rs + '\n';
+    };
 
-  // ── BILL INFO ─────────────────────────────────────────────────────────────
-  p += ALIGN_LEFT;
-  p += BOLD_ON + 'BILL INFORMATION\n' + BOLD_OFF;
-  p += SEP + '\n';
-  p += twoCol('Bill No:', selectedBillForHistory.billNumber);
-  p += twoCol('Date:', fmtDate(new Date()));
-  p += twoCol('Time:', fmtTime(new Date()));
-  p += twoCol(
-    'Customer:',
-    String(selectedBillForHistory.customer || 'Walk-in Customer').substring(0, 24)
-  );
-  if (selectedBillForHistory.customerPhone) {
-    p += twoCol('Phone:', selectedBillForHistory.customerPhone);
-  }
-  p += SEP + '\n';
+    const fmtAmt = (amt) => {
+      const n = Number(amt);
+      return isNaN(n) ? '0.00' : n.toFixed(2);
+    };
 
-  // ── PAYMENT SUMMARY ───────────────────────────────────────────────────────
-  p += ALIGN_LEFT;
-  p += BOLD_ON + 'PAYMENT SUMMARY\n' + BOLD_OFF;
-  p += SEP + '\n';
-  p += twoCol('Bill Total:',       'Rs.' + fmtAmt(selectedBillForHistory.total));
-  p += twoCol('Paid at Creation:', 'Rs.' + fmtAmt(selectedBillForHistory.originalPaidAmount || 0));
-  p += twoCol('Due at Creation:',  'Rs.' + fmtAmt(selectedBillForHistory.originalDueAmount  || 0));
+    const fmtDate = (d) =>
+      new Date(d).toLocaleDateString('en-GB', {
+        day: '2-digit', month: 'short', year: 'numeric'
+      });
 
-  if ((selectedBillForHistory.totalFromHistory || 0) > 0) {
-    p += twoCol('Additional Paid:', 'Rs.' + fmtAmt(selectedBillForHistory.totalFromHistory));
-  }
+    const fmtTime = (d) =>
+      new Date(d).toLocaleTimeString('en-IN', {
+        hour: '2-digit', minute: '2-digit', hour12: true
+      });
 
-  p += SEP + '\n';
-  p += BOLD_ON;
-  p += twoCol('TOTAL PAID:',    'Rs.' + fmtAmt(selectedBillForHistory.totalPaid));
-  p += twoCol('REMAINING DUE:', 'Rs.' + fmtAmt(selectedBillForHistory.remainingDue));
-  p += BOLD_OFF;
-  p += SEP2 + '\n';
+    // ── Build receipt ─────────────────────────────────────────────────────────
+    let p = '';
+    p += INIT;
+    p += FONT_NORMAL;
 
-  // ── PAYMENT RECORDS ───────────────────────────────────────────────────────
-  p += ALIGN_LEFT;
-  if (paymentHistory.length > 0) {
-    p += BOLD_ON + 'PAYMENT RECORDS\n' + BOLD_OFF;
-    p += SEP + '\n';
-
-    paymentHistory.forEach((payment, index) => {
-      p += BOLD_ON + `#${index + 1}  ${payment.paymentMethod.toUpperCase()}\n` + BOLD_OFF;
-      p += twoCol('Date:',   fmtDate(payment.date));
-      p += twoCol('Time:',   fmtTime(payment.date));
-      p += twoCol('Amount:', 'Rs.' + fmtAmt(payment.amount));
-
-      if (payment.transactionId) {
-        const txn = String(payment.transactionId);
-        if (txn.length <= LINE_WIDTH - 8) {
-          p += twoCol('TXN ID:', txn);
-        } else {
-          p += left('TXN ID:');
-          p += left('  ' + txn.substring(0, LINE_WIDTH - 2));
-        }
-      }
-
-      if (payment.notes) {
-        p += left('Note: ' + String(payment.notes).substring(0, LINE_WIDTH - 6));
-      }
-
-      if (payment.recordedBy && payment.recordedBy !== 'system') {
-        p += twoCol('By:', payment.recordedBy);
-      }
-
-      p += SEP + '\n';
-    });
-
-  } else {
-    p += SEP + '\n';
+    // ── HEADER ───────────────────────────────────────────────────────────────
     p += ALIGN_CTR;
-    p += 'No Additional Payments\n';
-    p += 'Only original payment at\n';
-    p += 'bill creation recorded\n';
-    p += ALIGN_LEFT;
+    p += FONT_DBLH;
+    p += 'YOUR SHOP NAME\n';
+    p += FONT_NORMAL;
+    p += '123 Main Street, City - 600001\n';
+    p += 'Ph: +91 98765 43210\n';
+    p += 'GST: 33ABCDE1234F1Z5\n';
     p += SEP + '\n';
-  }
+    p += BOLD_ON + 'PAYMENT HISTORY\n' + BOLD_OFF;
+    p += SEP + '\n';
 
-  // ── FOOTER ────────────────────────────────────────────────────────────────
-  p += ALIGN_CTR;
-  p += '* Official Payment Record *\n';
-  p += 'Thank You for Your Payment\n';
-  p += 'Please Visit Again\n';
-  p += SEP + '\n';
-  p += 'Powered by POS System\n';
-  p += SEP + '\n';
+    // ── BILL INFO ─────────────────────────────────────────────────────────────
+    p += ALIGN_LEFT;
+    p += BOLD_ON + 'BILL INFORMATION\n' + BOLD_OFF;
+    p += SEP + '\n';
+    p += twoCol('Bill No:', selectedBillForHistory.billNumber);
+    p += twoCol('Date:', fmtDate(new Date()));
+    p += twoCol('Time:', fmtTime(new Date()));
+    p += twoCol(
+      'Customer:',
+      String(selectedBillForHistory.customer || 'Walk-in Customer').substring(0, 24)
+    );
+    if (selectedBillForHistory.customerPhone) {
+      p += twoCol('Phone:', selectedBillForHistory.customerPhone);
+    }
+    p += SEP + '\n';
 
-  // ── CUT ───────────────────────────────────────────────────────────────────
-  p += ALIGN_LEFT;
-  p += PAPER_CUT;
+    // ── PAYMENT SUMMARY ───────────────────────────────────────────────────────
+    p += ALIGN_LEFT;
+    p += BOLD_ON + 'PAYMENT SUMMARY\n' + BOLD_OFF;
+    p += SEP + '\n';
+    p += twoCol('Bill Total:',       'Rs.' + fmtAmt(selectedBillForHistory.total));
+    p += twoCol('Paid at Creation:', 'Rs.' + fmtAmt(selectedBillForHistory.originalPaidAmount || 0));
+    p += twoCol('Due at Creation:',  'Rs.' + fmtAmt(selectedBillForHistory.originalDueAmount  || 0));
 
-  // ── Send to RawBT ─────────────────────────────────────────────────────────
-  try {
-    const intentUrl = `intent:${encodeURIComponent(p)}#Intent;scheme=rawbt;package=ru.a402d.rawbtprinter;end;`;
-    window.location.href = intentUrl;
-  } catch (error) {
-    console.error('Print error:', error);
-    alert('Failed to print. Please make sure RawBT app is installed.');
-  }
-};
+    if ((selectedBillForHistory.totalFromHistory || 0) > 0) {
+      p += twoCol('Additional Paid:', 'Rs.' + fmtAmt(selectedBillForHistory.totalFromHistory));
+    }
+
+    p += SEP + '\n';
+    p += BOLD_ON;
+    p += twoCol('TOTAL PAID:',    'Rs.' + fmtAmt(selectedBillForHistory.totalPaid));
+    p += twoCol('REMAINING DUE:', 'Rs.' + fmtAmt(selectedBillForHistory.remainingDue));
+    p += BOLD_OFF;
+    p += SEP2 + '\n';
+
+    // ── PAYMENT RECORDS ───────────────────────────────────────────────────────
+    p += ALIGN_LEFT;
+    if (paymentHistory.length > 0) {
+      p += BOLD_ON + 'PAYMENT RECORDS\n' + BOLD_OFF;
+      p += SEP + '\n';
+
+      paymentHistory.forEach((payment, index) => {
+        p += BOLD_ON + `#${index + 1}  ${payment.paymentMethod.toUpperCase()}\n` + BOLD_OFF;
+        p += twoCol('Date:',   fmtDate(payment.date));
+        p += twoCol('Time:',   fmtTime(payment.date));
+        p += twoCol('Amount:', 'Rs.' + fmtAmt(payment.amount));
+
+        if (payment.transactionId) {
+          const txn = String(payment.transactionId);
+          if (txn.length <= LINE_WIDTH - 8) {
+            p += twoCol('TXN ID:', txn);
+          } else {
+            p += left('TXN ID:');
+            p += left('  ' + txn.substring(0, LINE_WIDTH - 2));
+          }
+        }
+
+        if (payment.notes) {
+          p += left('Note: ' + String(payment.notes).substring(0, LINE_WIDTH - 6));
+        }
+
+        if (payment.recordedBy && payment.recordedBy !== 'system') {
+          p += twoCol('By:', payment.recordedBy);
+        }
+
+        p += SEP + '\n';
+      });
+
+    } else {
+      p += SEP + '\n';
+      p += ALIGN_CTR;
+      p += 'No Additional Payments\n';
+      p += 'Only original payment at\n';
+      p += 'bill creation recorded\n';
+      p += ALIGN_LEFT;
+      p += SEP + '\n';
+    }
+
+    // ── FOOTER ────────────────────────────────────────────────────────────────
+    p += ALIGN_CTR;
+    p += '* Official Payment Record *\n';
+    p += 'Thank You for Your Payment\n';
+    p += 'Please Visit Again\n';
+    p += SEP + '\n';
+    p += 'Powered by POS System\n';
+    p += SEP + '\n';
+
+    // ── CUT ───────────────────────────────────────────────────────────────────
+    p += ALIGN_LEFT;
+    p += PAPER_CUT;
+
+    // ── Send to RawBT ─────────────────────────────────────────────────────────
+    try {
+      const intentUrl = `intent:${encodeURIComponent(p)}#Intent;scheme=rawbt;package=ru.a402d.rawbtprinter;end;`;
+      window.location.href = intentUrl;
+    } catch (error) {
+      console.error('Print error:', error);
+      alert('Failed to print. Please make sure RawBT app is installed.');
+    }
+  };
+  
   // ✅ Fetch payment history
   const fetchPaymentHistory = async (bill) => {
     const billId = bill._id || bill.id;
@@ -411,14 +484,15 @@ const handlePrintPaymentHistory = () => {
     
     setLoadingHistory(true);
     try {
-      const response = await axios.get(`${API}/bills/${billId}/payment-history`);
+      const response = await axios.get(`${API}/bills/${billId}/payment-history?companyId=${companyId}`);
       console.log("Payment history response:", response.data);
       
       if (response.data.success) {
         // Format payment history amounts
         const formattedHistory = (response.data.paymentHistory || []).map(payment => ({
           ...payment,
-          amount: roundToTwoDecimals(payment.amount || 0)
+          amount: roundToTwoDecimals(payment.amount || 0),
+          index: payment.index
         }));
         
         setPaymentHistory(formattedHistory);
@@ -490,7 +564,7 @@ const handlePrintPaymentHistory = () => {
       console.log("Payment data:", paymentData);
       
       const response = await axios.post(
-        `${API}/bills/${billId}/payment`,
+        `${API}/bills/${billId}/payment?companyId=${companyId}`,
         paymentData,
         {
           timeout: 10000,
@@ -549,6 +623,21 @@ const handlePrintPaymentHistory = () => {
   const handleRetry = () => {
     fetchReport();
   };
+
+  // Show loading or redirect if no company
+  if (!companyId) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4">
+        <div className="bg-white rounded-xl shadow-lg p-8 text-center max-w-md">
+          <div className="text-6xl mb-4">🏢</div>
+          <h2 className="text-xl font-bold text-gray-800 mb-2">No Company Associated</h2>
+          <p className="text-gray-600 mb-4">Please login again to access reports.</p>
+          <div className="inline-block w-8 h-8 border-4 border-blue-200 border-t-blue-600 rounded-full animate-spin"></div>
+          <p className="text-sm text-gray-500 mt-3">Redirecting to login...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="p-4 bg-gray-50 min-h-screen">
@@ -716,7 +805,6 @@ const handlePrintPaymentHistory = () => {
                       </td>
                       <td className="p-2 text-center">
                         <div className="flex flex-wrap gap-1 justify-center">
-
                           <button
                             onClick={() => handleEditBill(bill)}
                             className="bg-blue-500 text-white px-2 py-1 rounded text-xs hover:bg-blue-600"
@@ -747,13 +835,16 @@ const handlePrintPaymentHistory = () => {
                           >
                             🖨️
                           </button>
-                          <button
-                            onClick={() => handleDeleteBill(bill)}
-                            className="bg-red-500 text-white px-2 py-1 rounded text-xs hover:bg-red-600"
-                            title="Delete Bill"
-                          >
-                            🗑️
-                          </button>
+                          {/* Delete button - Only show for admins */}
+                          {canDelete && (
+                            <button
+                              onClick={() => handleDeleteBill(bill)}
+                              className="bg-red-500 text-white px-2 py-1 rounded text-xs hover:bg-red-600"
+                              title="Delete Bill"
+                            >
+                              🗑️
+                            </button>
+                          )}
                         </div>
                       </td>
                     </tr>
@@ -950,154 +1041,167 @@ const handlePrintPaymentHistory = () => {
         </div>
       )}
 
-{/* Payment History Modal */}
-{showPaymentHistoryModal && selectedBillForHistory && (
-  <div 
-    className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4"
-    onClick={() => setShowPaymentHistoryModal(false)}
-  >
-    <div 
-      className="bg-white rounded-lg shadow-xl max-w-md w-full max-h-[80vh] flex flex-col"
-      onClick={(e) => e.stopPropagation()}
-    >
-      <div className="sticky top-0 bg-white p-4 border-b rounded-t-lg">
-        <div className="flex justify-between items-start">
-          <div>
-            <h3 className="text-lg font-semibold text-gray-900">
-              Payment History
-            </h3>
-            <p className="text-sm text-gray-700 mt-1">
-              Bill #{selectedBillForHistory.billNumber} - {selectedBillForHistory.customer || "Walk-in"}
-            </p>
-          </div>
-          <button
-            onClick={handlePrintPaymentHistory}
-            className="bg-purple-500 text-white px-3 py-1.5 rounded-lg text-sm font-bold hover:bg-purple-600 transition-colors flex items-center gap-1"
-            title="Print Payment History"
+      {/* Payment History Modal with Conditional Delete Option */}
+      {showPaymentHistoryModal && selectedBillForHistory && (
+        <div 
+          className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4"
+          onClick={() => setShowPaymentHistoryModal(false)}
+        >
+          <div 
+            className="bg-white rounded-lg shadow-xl max-w-md w-full max-h-[80vh] flex flex-col"
+            onClick={(e) => e.stopPropagation()}
           >
-            🖨️ Print
-          </button>
-        </div>
-        
-        {/* Bill Summary */}
-        <div className="mt-3 bg-gray-100 p-3 rounded-lg">
-          <div className="space-y-2">
-            <div className="flex justify-between text-sm">
-              <span className="text-gray-700 font-medium">Bill Total:</span>
-              <span className="font-bold text-gray-900">{formatCurrency(selectedBillForHistory.total)}</span>
-            </div>
-            <div className="flex justify-between text-sm">
-              <span className="text-gray-700 font-medium">Paid at Bill Creation:</span>
-              <span className="font-semibold text-green-700">{formatCurrency(selectedBillForHistory.originalPaidAmount || 0)}</span>
-            </div>
-            <div className="flex justify-between text-sm">
-              <span className="text-gray-700 font-medium">Due at Bill Creation:</span>
-              <span className={`font-semibold ${(selectedBillForHistory.originalDueAmount || 0) > 0 ? 'text-orange-700' : 'text-green-700'}`}>
-                {formatCurrency(selectedBillForHistory.originalDueAmount || 0)}
-              </span>
-            </div>
-            {selectedBillForHistory.totalFromHistory > 0 && (
-              <div className="flex justify-between text-sm pt-2 border-t border-gray-300">
-                <span className="text-gray-700 font-medium">Additional Payments Made:</span>
-                <span className="font-semibold text-green-700">{formatCurrency(selectedBillForHistory.totalFromHistory)}</span>
+            <div className="sticky top-0 bg-white p-4 border-b rounded-t-lg">
+              <div className="flex justify-between items-start">
+                <div>
+                  <h3 className="text-lg font-semibold text-gray-900">
+                    Payment History
+                  </h3>
+                  <p className="text-sm text-gray-700 mt-1">
+                    Bill #{selectedBillForHistory.billNumber} - {selectedBillForHistory.customer || "Walk-in"}
+                  </p>
+                </div>
+                <button
+                  onClick={handlePrintPaymentHistory}
+                  className="bg-purple-500 text-white px-3 py-1.5 rounded-lg text-sm font-bold hover:bg-purple-600 transition-colors flex items-center gap-1"
+                  title="Print Payment History"
+                >
+                  🖨️ Print
+                </button>
               </div>
-            )}
-            <div className="flex justify-between text-sm pt-2 border-t border-gray-400 mt-1">
-              <span className="font-semibold text-gray-800">Total Paid:</span>
-              <span className="font-bold text-green-700 text-base">{formatCurrency(selectedBillForHistory.totalPaid)}</span>
-            </div>
-            <div className="flex justify-between text-sm">
-              <span className="font-semibold text-gray-800">Remaining Due:</span>
-              <span className={`font-bold ${selectedBillForHistory.remainingDue > 0 ? 'text-red-700' : 'text-green-700'}`}>
-                {formatCurrency(selectedBillForHistory.remainingDue)}
-              </span>
-            </div>
-          </div>
-        </div>
-      </div>
-      
-      <div className="flex-1 overflow-y-auto p-4">
-        {loadingHistory ? (
-          <div className="text-center py-8">
-            <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div>
-            <p className="mt-2 text-gray-600">Loading payment history...</p>
-          </div>
-        ) : paymentHistory.length > 0 ? (
-          <>
-            <h4 className="font-semibold text-gray-800 mb-3">Additional Payment Records:</h4>
-            <div className="space-y-3">
-              {paymentHistory.map((payment, index) => (
-                <div key={index} className="border border-gray-200 rounded-lg p-3 bg-gray-50">
-                  <div className="flex justify-between items-start">
-                    <div className="flex-1">
-                      <div className="font-semibold text-gray-800">
-                        {payment.paymentMethod.toUpperCase()}
-                      </div>
-                      <div className="text-xs text-gray-600 mt-1">
-                        {new Date(payment.date).toLocaleString()}
-                      </div>
-                      {payment.transactionId && (
-                        <div className="text-xs text-gray-600 mt-1">
-                          Transaction ID: {payment.transactionId}
-                        </div>
-                      )}
-                      {payment.notes && (
-                        <div className="text-xs text-gray-600 mt-1 italic">
-                          {payment.notes}
-                        </div>
-                      )}
-                      {payment.recordedBy && payment.recordedBy !== 'system' && (
-                        <div className="text-xs text-gray-600 mt-1">
-                          Recorded by: {payment.recordedBy}
-                        </div>
-                      )}
+              
+              {/* Bill Summary */}
+              <div className="mt-3 bg-gray-100 p-3 rounded-lg">
+                <div className="space-y-2">
+                  <div className="flex justify-between text-sm">
+                    <span className="text-gray-700 font-medium">Bill Total:</span>
+                    <span className="font-bold text-gray-900">{formatCurrency(selectedBillForHistory.total)}</span>
+                  </div>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-gray-700 font-medium">Paid at Bill Creation:</span>
+                    <span className="font-semibold text-green-700">{formatCurrency(selectedBillForHistory.originalPaidAmount || 0)}</span>
+                  </div>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-gray-700 font-medium">Due at Bill Creation:</span>
+                    <span className={`font-semibold ${(selectedBillForHistory.originalDueAmount || 0) > 0 ? 'text-orange-700' : 'text-green-700'}`}>
+                      {formatCurrency(selectedBillForHistory.originalDueAmount || 0)}
+                    </span>
+                  </div>
+                  {selectedBillForHistory.totalFromHistory > 0 && (
+                    <div className="flex justify-between text-sm pt-2 border-t border-gray-300">
+                      <span className="text-gray-700 font-medium">Additional Payments Made:</span>
+                      <span className="font-semibold text-green-700">{formatCurrency(selectedBillForHistory.totalFromHistory)}</span>
                     </div>
-                    <div className="text-lg font-bold text-green-700">
-                      {formatCurrency(payment.amount)}
+                  )}
+                  <div className="flex justify-between text-sm pt-2 border-t border-gray-400 mt-1">
+                    <span className="font-semibold text-gray-800">Total Paid:</span>
+                    <span className="font-bold text-green-700 text-base">{formatCurrency(selectedBillForHistory.totalPaid)}</span>
+                  </div>
+                  <div className="flex justify-between text-sm">
+                    <span className="font-semibold text-gray-800">Remaining Due:</span>
+                    <span className={`font-bold ${selectedBillForHistory.remainingDue > 0 ? 'text-red-700' : 'text-green-700'}`}>
+                      {formatCurrency(selectedBillForHistory.remainingDue)}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+            
+            <div className="flex-1 overflow-y-auto p-4">
+              {loadingHistory ? (
+                <div className="text-center py-8">
+                  <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div>
+                  <p className="mt-2 text-gray-600">Loading payment history...</p>
+                </div>
+              ) : paymentHistory.length > 0 ? (
+                <>
+                  <h4 className="font-semibold text-gray-800 mb-3">Additional Payment Records:</h4>
+                  <div className="space-y-3">
+                    {paymentHistory.map((payment, index) => (
+                      <div key={index} className="border border-gray-200 rounded-lg p-3 bg-gray-50">
+                        <div className="flex justify-between items-start">
+                          <div className="flex-1">
+                            <div className="font-semibold text-gray-800">
+                              {payment.paymentMethod.toUpperCase()}
+                            </div>
+                            <div className="text-xs text-gray-600 mt-1">
+                              {new Date(payment.date).toLocaleString()}
+                            </div>
+                            {payment.transactionId && (
+                              <div className="text-xs text-gray-600 mt-1">
+                                Transaction ID: {payment.transactionId}
+                              </div>
+                            )}
+                            {payment.notes && (
+                              <div className="text-xs text-gray-600 mt-1 italic">
+                                {payment.notes}
+                              </div>
+                            )}
+                            {payment.recordedBy && payment.recordedBy !== 'system' && (
+                              <div className="text-xs text-gray-600 mt-1">
+                                Recorded by: {payment.recordedBy}
+                              </div>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <div className="text-lg font-bold text-green-700">
+                              {formatCurrency(payment.amount)}
+                            </div>
+                            {/* Delete button - Only show for admins */}
+                            {canDelete && (
+                              <button
+                                onClick={() => handleDeletePayment(index)}
+                                disabled={deletingPayment}
+                                className="text-red-500 hover:text-red-700 text-lg font-bold ml-2 disabled:opacity-50"
+                                title="Delete Payment"
+                              >
+                                ❌
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              ) : (
+                <div className="text-center py-8">
+                  <div className="text-4xl mb-2">💰</div>
+                  <p className="text-gray-600">No additional payments recorded</p>
+                  <p className="text-xs text-gray-500 mt-2">
+                    Only the original payment made at bill creation
+                  </p>
+                  <div className="mt-4 p-3 bg-gray-100 rounded-lg">
+                    <div className="flex justify-between text-sm">
+                      <span className="text-gray-700 font-medium">Original Paid:</span>
+                      <span className="font-semibold text-green-700">{formatCurrency(selectedBillForHistory.originalPaidAmount || 0)}</span>
+                    </div>
+                    <div className="flex justify-between text-sm mt-1">
+                      <span className="text-gray-700 font-medium">Original Due:</span>
+                      <span className="font-semibold text-orange-700">{formatCurrency(selectedBillForHistory.originalDueAmount || 0)}</span>
                     </div>
                   </div>
                 </div>
-              ))}
+              )}
             </div>
-          </>
-        ) : (
-          <div className="text-center py-8">
-            <div className="text-4xl mb-2">💰</div>
-            <p className="text-gray-600">No additional payments recorded</p>
-            <p className="text-xs text-gray-500 mt-2">
-              Only the original payment made at bill creation
-            </p>
-            <div className="mt-4 p-3 bg-gray-100 rounded-lg">
-              <div className="flex justify-between text-sm">
-                <span className="text-gray-700 font-medium">Original Paid:</span>
-                <span className="font-semibold text-green-700">{formatCurrency(selectedBillForHistory.originalPaidAmount || 0)}</span>
-              </div>
-              <div className="flex justify-between text-sm mt-1">
-                <span className="text-gray-700 font-medium">Original Due:</span>
-                <span className="font-semibold text-orange-700">{formatCurrency(selectedBillForHistory.originalDueAmount || 0)}</span>
-              </div>
+            
+            <div className="sticky bottom-0 bg-white p-4 border-t rounded-b-lg flex gap-2">
+              <button
+                onClick={() => setShowPaymentHistoryModal(false)}
+                className="flex-1 px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition font-medium"
+              >
+                Close
+              </button>
+              <button
+                onClick={handlePrintPaymentHistory}
+                className="flex-1 px-4 py-2 bg-purple-500 text-white rounded-lg hover:bg-purple-600 transition font-medium flex items-center justify-center gap-1"
+              >
+                🖨️ Print with RawBT
+              </button>
             </div>
           </div>
-        )}
-      </div>
-      
-      <div className="sticky bottom-0 bg-white p-4 border-t rounded-b-lg flex gap-2">
-        <button
-          onClick={() => setShowPaymentHistoryModal(false)}
-          className="flex-1 px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition font-medium"
-        >
-          Close
-        </button>
-        <button
-          onClick={handlePrintPaymentHistory}
-          className="flex-1 px-4 py-2 bg-purple-500 text-white rounded-lg hover:bg-purple-600 transition font-medium flex items-center justify-center gap-1"
-        >
-          🖨️ Print with RawBT
-        </button>
-      </div>
-    </div>
-  </div>
-)}
+        </div>
+      )}
     </div>
   );
 };

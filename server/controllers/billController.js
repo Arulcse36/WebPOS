@@ -2,6 +2,7 @@ const Bill = require('../models/Bill');
 const Product = require('../models/Product');
 const Customer = require('../models/Customer');
 const Counter = require('../models/Counter');
+const Company = require('../models/Company');
 
 // Helper function to round numbers to 2 decimal places
 const roundToTwo = (num) => {
@@ -9,21 +10,41 @@ const roundToTwo = (num) => {
   return Math.round((num + Number.EPSILON) * 100) / 100;
 };
 
-// 🔢 Generate next bill number
-const getNextBillNumber = async () => {
+// 🔢 Generate next bill number for specific company (using company name as code)
+const getNextBillNumber = async (companyId) => {
+  // First, fetch the company to get its name (which serves as company code)
+  const company = await Company.findById(companyId);
+  
+  if (!company) {
+    throw new Error(`Company not found with ID: ${companyId}`);
+  }
+  
+  if (!company.companyName) {
+    throw new Error(`Company name is missing for company ID: ${companyId}`);
+  }
+  
   const counter = await Counter.findOneAndUpdate(
-    { name: "bill" },
+    { 
+      companyId: companyId,
+      name: `bill_${companyId}` 
+    },
     { $inc: { seq: 1 } },
-    { returnDocument: "after", upsert: true }
+    { 
+      returnDocument: "after", 
+      upsert: true,
+      new: true
+    }
   );
 
-  return `BILL-${String(counter.seq).padStart(4, "0")}`;
+  // Use companyName as the prefix (e.g., "MYCOMPANY-0001")
+  return `${company.companyName}-${String(counter.seq).padStart(4, "0")}`;
 };
 
 // ✅ CREATE BILL
 exports.createBill = async (req, res) => {
   try {
     let {
+      companyId,
       items,
       discount,
       discountAmount,
@@ -44,6 +65,14 @@ exports.createBill = async (req, res) => {
 
     console.log("Create bill payload:", req.body);
     
+    // ✅ Validate companyId
+    if (!companyId) {
+      return res.status(400).json({
+        success: false,
+        message: "Company ID required"
+      });
+    }
+    
     if (!items || items.length === 0) {
       throw new Error("No items in the bill");
     }
@@ -54,7 +83,7 @@ exports.createBill = async (req, res) => {
 
     // ✅ Check stock
     for (const item of items) {
-      const product = await Product.findById(item.productId);
+      const product = await Product.findOne({ _id: item.productId, companyId });
       if (!product) throw new Error(`Product not found: ${item.productId}`);
 
       if (product.stock < item.quantity) {
@@ -65,7 +94,7 @@ exports.createBill = async (req, res) => {
     // ✅ Prepare items with rounded values
     const billItems = await Promise.all(
       items.map(async (item) => {
-        const product = await Product.findById(item.productId);
+        const product = await Product.findOne({ _id: item.productId, companyId });
         const price = roundToTwo(item.price);
         const total = roundToTwo(price * item.quantity);
         
@@ -93,7 +122,7 @@ exports.createBill = async (req, res) => {
     const finalCashPaid = roundToTwo(cashPaid || 0);
     const finalUpiPaid = roundToTwo(upiPaid || 0);
 
-    // 👤 Customer
+    // 👤 Customer - filter by company
     let customerDetails = {
       customerId: null,
       name: customerName || "Walk-in Customer",
@@ -103,7 +132,7 @@ exports.createBill = async (req, res) => {
     };
 
     if (customerId) {
-      const customer = await Customer.findById(customerId);
+      const customer = await Customer.findOne({ _id: customerId, companyId });
       if (customer) {
         customerDetails = {
           customerId: customer._id,
@@ -115,11 +144,12 @@ exports.createBill = async (req, res) => {
       }
     }
 
-    // 🔢 Generate Bill Number
-    const billNumber = await getNextBillNumber();
+    // 🔢 Generate Bill Number for this company
+    const billNumber = await getNextBillNumber(companyId);
 
-    // 🧾 Create Bill with rounded values
+    // 🧾 Create Bill with rounded values and companyId
     const bill = new Bill({
+      companyId,
       billNumber,
       items: billItems,
       subtotal,
@@ -141,17 +171,18 @@ exports.createBill = async (req, res) => {
 
     // 📦 Update stock
     for (const item of items) {
-      await Product.findByIdAndUpdate(
-        item.productId,
+      await Product.findOneAndUpdate(
+        { _id: item.productId, companyId },
         { $inc: { stock: -item.quantity } }
       );
     }
 
     // 💰 Update customer due
     if (customerId && bill.dueAmount > 0) {
-      await Customer.findByIdAndUpdate(customerId, {
-        $inc: { totalDue: bill.dueAmount }
-      });
+      await Customer.findOneAndUpdate(
+        { _id: customerId, companyId },
+        { $inc: { totalDue: bill.dueAmount } }
+      );
     }
 
     res.status(201).json({
@@ -173,6 +204,7 @@ exports.createBill = async (req, res) => {
 exports.updateBill = async (req, res) => {
   try {
     const { id } = req.params;
+    const { companyId } = req.query;
     let {
       items,
       discount,
@@ -193,6 +225,14 @@ exports.updateBill = async (req, res) => {
     } = req.body;
 
     console.log("Update bill payload:", req.body);
+    
+    // ✅ Validate companyId
+    if (!companyId) {
+      return res.status(400).json({
+        success: false,
+        message: "Company ID required"
+      });
+    }
 
     // Round incoming amounts
     discount = roundToTwo(discount);
@@ -203,8 +243,8 @@ exports.updateBill = async (req, res) => {
     upiPaid = roundToTwo(upiPaid);
     total = roundToTwo(total);
 
-    // Find existing bill
-    const existingBill = await Bill.findById(id);
+    // Find existing bill with company filter
+    const existingBill = await Bill.findOne({ _id: id, companyId });
     if (!existingBill) {
       return res.status(404).json({
         success: false,
@@ -227,7 +267,7 @@ exports.updateBill = async (req, res) => {
 
     // Check stock availability and calculate differences
     for (const newItem of items) {
-      const product = await Product.findById(newItem.productId);
+      const product = await Product.findOne({ _id: newItem.productId, companyId });
       if (!product) throw new Error(`Product not found: ${newItem.productId}`);
 
       const oldItem = oldItemsMap.get(newItem.productId.toString());
@@ -241,7 +281,7 @@ exports.updateBill = async (req, res) => {
     // ✅ Prepare updated items with rounded values
     const billItems = await Promise.all(
       items.map(async (item) => {
-        const product = await Product.findById(item.productId);
+        const product = await Product.findOne({ _id: item.productId, companyId });
         const price = roundToTwo(item.price);
         const total = roundToTwo(price * item.quantity);
         
@@ -258,12 +298,41 @@ exports.updateBill = async (req, res) => {
     const subtotal = roundToTwo(billItems.reduce((sum, i) => sum + i.total, 0));
     const finalDiscountAmount = discountAmount || roundToTwo((subtotal * (discount || 0)) / 100);
     const finalTotal = total || roundToTwo(subtotal - finalDiscountAmount);
-    const finalPaidAmount = roundToTwo(paidAmount || 0);
-    const finalDueAmount = dueAmount !== undefined ? dueAmount : roundToTwo(finalTotal - finalPaidAmount);
-    const finalCashPaid = roundToTwo(cashPaid || 0);
-    const finalUpiPaid = roundToTwo(upiPaid || 0);
+    
+    // ✅ Calculate new paid and due amounts
+    let finalPaidAmount = 0;
+    let finalDueAmount = 0;
+    let finalCashPaid = roundToTwo(cashPaid || 0);
+    let finalUpiPaid = roundToTwo(upiPaid || 0);
+    
+    // Get existing payment history total
+    const existingPaymentHistoryTotal = (existingBill.paymentHistory || []).reduce((sum, p) => sum + p.amount, 0);
+    
+    if (paymentMethod === 'credit') {
+      // For credit, paid amount is what's paid now plus existing payment history
+      finalPaidAmount = roundToTwo((paidAmount || 0) + existingPaymentHistoryTotal);
+      finalDueAmount = roundToTwo(finalTotal - finalPaidAmount);
+    } else if (paymentMethod === 'cash') {
+      finalPaidAmount = finalTotal;
+      finalDueAmount = 0;
+      finalCashPaid = finalTotal - existingPaymentHistoryTotal;
+      if (finalCashPaid < 0) finalCashPaid = 0;
+    } else if (paymentMethod === 'upi') {
+      finalPaidAmount = finalTotal;
+      finalDueAmount = 0;
+      finalUpiPaid = finalTotal - existingPaymentHistoryTotal;
+      if (finalUpiPaid < 0) finalUpiPaid = 0;
+    } else if (paymentMethod === 'mixed') {
+      finalPaidAmount = roundToTwo(finalCashPaid + finalUpiPaid + existingPaymentHistoryTotal);
+      finalDueAmount = roundToTwo(finalTotal - finalPaidAmount);
+    }
+    
+    // Ensure due amount is not negative
+    finalDueAmount = Math.max(0, finalDueAmount);
+    
+    console.log(`Update Payment Summary - Method: ${paymentMethod}, Paid: ${finalPaidAmount}, Due: ${finalDueAmount}`);
 
-    // 👤 Customer
+    // 👤 Customer - filter by company
     let customerDetails = {
       customerId: null,
       name: customerName || "Walk-in Customer",
@@ -273,7 +342,7 @@ exports.updateBill = async (req, res) => {
     };
 
     if (customerId) {
-      const customer = await Customer.findById(customerId);
+      const customer = await Customer.findOne({ _id: customerId, companyId });
       if (customer) {
         customerDetails = {
           customerId: customer._id,
@@ -291,8 +360,8 @@ exports.updateBill = async (req, res) => {
       const quantityDifference = newItem.quantity - (oldItem ? oldItem.quantity : 0);
 
       if (quantityDifference !== 0) {
-        await Product.findByIdAndUpdate(
-          newItem.productId,
+        await Product.findOneAndUpdate(
+          { _id: newItem.productId, companyId },
           { $inc: { stock: -quantityDifference } }
         );
       }
@@ -301,25 +370,26 @@ exports.updateBill = async (req, res) => {
     // Handle removed items (restore stock)
     for (const oldItem of oldItems) {
       if (!newItemsMap.has(oldItem.productId.toString())) {
-        await Product.findByIdAndUpdate(
-          oldItem.productId,
+        await Product.findOneAndUpdate(
+          { _id: oldItem.productId, companyId },
           { $inc: { stock: oldItem.quantity } }
         );
       }
     }
 
-    // Update customer due
+    // Update customer due (adjust the difference)
     const oldDueAmount = existingBill.dueAmount;
     if (customerId && finalDueAmount !== oldDueAmount) {
       const dueDifference = finalDueAmount - oldDueAmount;
-      await Customer.findByIdAndUpdate(customerId, {
-        $inc: { totalDue: dueDifference }
-      });
+      await Customer.findOneAndUpdate(
+        { _id: customerId, companyId },
+        { $inc: { totalDue: dueDifference } }
+      );
     }
 
     // 🧾 Update Bill
-    const updatedBill = await Bill.findByIdAndUpdate(
-      id,
+    const updatedBill = await Bill.findOneAndUpdate(
+      { _id: id, companyId },
       {
         items: billItems,
         subtotal,
@@ -334,6 +404,7 @@ exports.updateBill = async (req, res) => {
         customer: customerDetails,
         billDate: billDate ? new Date(billDate) : existingBill.billDate,
         notes: notes || existingBill.notes,
+        status: finalDueAmount === 0 ? "completed" : "pending",
         updatedAt: new Date()
       },
       { new: true, runValidators: true }
@@ -353,13 +424,21 @@ exports.updateBill = async (req, res) => {
     });
   }
 };
-
 // ✅ DELETE BILL
 exports.deleteBill = async (req, res) => {
   try {
     const { id } = req.params;
+    const { companyId } = req.query;
+    
+    // ✅ Validate companyId
+    if (!companyId) {
+      return res.status(400).json({
+        success: false,
+        message: "Company ID required"
+      });
+    }
 
-    const bill = await Bill.findById(id);
+    const bill = await Bill.findOne({ _id: id, companyId });
     if (!bill) {
       return res.status(404).json({
         success: false,
@@ -369,22 +448,22 @@ exports.deleteBill = async (req, res) => {
 
     // Restore stock
     for (const item of bill.items) {
-      await Product.findByIdAndUpdate(
-        item.productId,
+      await Product.findOneAndUpdate(
+        { _id: item.productId, companyId },
         { $inc: { stock: item.quantity } }
       );
     }
 
     // Update customer due
     if (bill.customer.customerId && bill.dueAmount > 0) {
-      await Customer.findByIdAndUpdate(
-        bill.customer.customerId,
+      await Customer.findOneAndUpdate(
+        { _id: bill.customer.customerId, companyId },
         { $inc: { totalDue: -bill.dueAmount } }
       );
     }
 
     // Delete the bill
-    await Bill.findByIdAndDelete(id);
+    await Bill.findOneAndDelete({ _id: id, companyId });
 
     res.json({
       success: true,
@@ -404,6 +483,7 @@ exports.deleteBill = async (req, res) => {
 exports.getBills = async (req, res) => {
   try {
     const {
+      companyId,
       startDate,
       endDate,
       status,
@@ -413,7 +493,15 @@ exports.getBills = async (req, res) => {
       limit = 20
     } = req.query;
 
-    const filter = {};
+    // ✅ Validate companyId
+    if (!companyId) {
+      return res.status(400).json({
+        success: false,
+        message: "Company ID required"
+      });
+    }
+
+    const filter = { companyId };
 
     console.log("Get bills query:", req.query);
 
@@ -461,7 +549,22 @@ exports.getBills = async (req, res) => {
 // ✅ GET BILL BY ID
 exports.getBillById = async (req, res) => {
   try {
-    const bill = await Bill.findById(req.params.id)
+    const { id } = req.params;
+    const { companyId } = req.query;
+
+    console.log("Get bill by ID query:", req.query);
+    
+    // ✅ Validate companyId
+    if (!companyId) {
+      return res.status(400).json({
+        success: false,
+        message: "Company ID required"
+      });
+    }
+
+    console.log(`Fetching bill with ID: ${id} for company: ${companyId}`);
+    
+    const bill = await Bill.findOne({ _id: id, companyId })
       .populate('customer.customerId', 'name phone email address')
       .populate('items.productId', 'name sku stock retailRate');
 
@@ -520,7 +623,18 @@ exports.getBillById = async (req, res) => {
 // ✅ GET BILL BY NUMBER
 exports.getBillByNumber = async (req, res) => {
   try {
-    const bill = await Bill.findOne({ billNumber: req.params.billNumber });
+    const { billNumber } = req.params;
+    const { companyId } = req.query;
+    
+    // ✅ Validate companyId
+    if (!companyId) {
+      return res.status(400).json({
+        success: false,
+        message: "Company ID required"
+      });
+    }
+    
+    const bill = await Bill.findOne({ billNumber, companyId });
 
     if (!bill) {
       return res.status(404).json({
@@ -546,25 +660,35 @@ exports.getBillByNumber = async (req, res) => {
 // ✅ CANCEL BILL
 exports.cancelBill = async (req, res) => {
   try {
+    const { id } = req.params;
+    const { companyId } = req.query;
     const { reason } = req.body;
+    
+    // ✅ Validate companyId
+    if (!companyId) {
+      return res.status(400).json({
+        success: false,
+        message: "Company ID required"
+      });
+    }
 
-    const bill = await Bill.findById(req.params.id);
+    const bill = await Bill.findOne({ _id: id, companyId });
 
     if (!bill) throw new Error("Bill not found");
     if (bill.status === "cancelled") throw new Error("Already cancelled");
 
     // Restore stock
     for (const item of bill.items) {
-      await Product.findByIdAndUpdate(
-        item.productId,
+      await Product.findOneAndUpdate(
+        { _id: item.productId, companyId },
         { $inc: { stock: item.quantity } }
       );
     }
 
     // Update customer due
     if (bill.customer.customerId && bill.dueAmount > 0) {
-      await Customer.findByIdAndUpdate(
-        bill.customer.customerId,
+      await Customer.findOneAndUpdate(
+        { _id: bill.customer.customerId, companyId },
         { $inc: { totalDue: -bill.dueAmount } }
       );
     }
@@ -590,16 +714,25 @@ exports.cancelBill = async (req, res) => {
   }
 };
 
-// ✅ RECORD PAYMENT (Payment History Only - No updates to paid amounts)
+// ✅ RECORD PAYMENT
 exports.recordPayment = async (req, res) => {
   try {
     let { amount, paymentMethod, transactionId, notes } = req.body;
     const { id } = req.params;
+    const { companyId } = req.query;
+    
+    // ✅ Validate companyId
+    if (!companyId) {
+      return res.status(400).json({
+        success: false,
+        message: "Company ID required"
+      });
+    }
 
     // Round the amount
     amount = roundToTwo(amount);
 
-    const bill = await Bill.findById(id);
+    const bill = await Bill.findOne({ _id: id, companyId });
 
     if (!bill) throw new Error("Bill not found");
     if (bill.status === "cancelled") throw new Error("Cannot pay cancelled bill");
@@ -649,14 +782,97 @@ exports.recordPayment = async (req, res) => {
   }
 };
 
+// ✅ DELETE PAYMENT (New function)
+exports.deletePayment = async (req, res) => {
+  try {
+    const { id, paymentIndex } = req.params;
+    const { companyId } = req.query;
+    
+    // ✅ Validate companyId
+    if (!companyId) {
+      return res.status(400).json({
+        success: false,
+        message: "Company ID required"
+      });
+    }
+
+    const bill = await Bill.findOne({ _id: id, companyId });
+    
+    if (!bill) {
+      return res.status(404).json({
+        success: false,
+        message: "Bill not found"
+      });
+    }
+    
+    const index = parseInt(paymentIndex);
+    if (isNaN(index) || index < 0 || index >= bill.paymentHistory.length) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid payment index"
+      });
+    }
+    
+    // Remove the payment
+    const deletedPayment = bill.paymentHistory[index];
+    bill.paymentHistory.splice(index, 1);
+    
+    // Recalculate totals from remaining payment history
+    const totalFromHistory = bill.paymentHistory.reduce((sum, p) => sum + p.amount, 0);
+    bill.paidAmount = totalFromHistory;
+    bill.dueAmount = Math.max(0, bill.total - totalFromHistory);
+    
+    // Update customer due if customer exists
+    if (bill.customer.customerId && bill.dueAmount !== bill.total) {
+      // Adjust customer due amount
+      await Customer.findOneAndUpdate(
+        { _id: bill.customer.customerId, companyId },
+        { $inc: { totalDue: -deletedPayment.amount } }
+      );
+    }
+    
+    await bill.save();
+    
+    console.log(`Payment deleted successfully: ${deletedPayment.amount} from bill ${bill.billNumber}`);
+    
+    res.json({
+      success: true,
+      message: "Payment deleted successfully",
+      bill: {
+        _id: bill._id,
+        billNumber: bill.billNumber,
+        paidAmount: roundToTwo(bill.paidAmount),
+        dueAmount: roundToTwo(bill.dueAmount),
+        paymentHistory: bill.paymentHistory
+      }
+    });
+    
+  } catch (error) {
+    console.error("Delete payment error:", error);
+    res.status(500).json({
+      success: false,
+      message: error.message
+    });
+  }
+};
+
 // ✅ GET PAYMENT HISTORY
 exports.getPaymentHistory = async (req, res) => {
   try {
     const { id } = req.params;
+    const { companyId } = req.query;
+    
+    // ✅ Validate companyId
+    if (!companyId) {
+      return res.status(400).json({
+        success: false,
+        message: "Company ID required"
+      });
+    }
     
     console.log("Fetching payment history for bill:", id);
     
-    const bill = await Bill.findById(id);
+    const bill = await Bill.findOne({ _id: id, companyId });
     
     if (!bill) {
       return res.status(404).json({
@@ -681,9 +897,10 @@ exports.getPaymentHistory = async (req, res) => {
     
     res.json({
       success: true,
-      paymentHistory: (bill.paymentHistory || []).map(p => ({
+      paymentHistory: (bill.paymentHistory || []).map((p, idx) => ({
         ...p.toObject(),
-        amount: roundToTwo(p.amount)
+        amount: roundToTwo(p.amount),
+        index: idx
       })),
       bill: {
         billNumber: bill.billNumber,
@@ -708,7 +925,16 @@ exports.getPaymentHistory = async (req, res) => {
 // ✅ GET REPORT (for Reports page)
 exports.getReport = async (req, res) => {
   try {
-    const { type, from, to } = req.query;
+    const { type, from, to, companyId } = req.query;
+    
+    // ✅ Validate companyId
+    if (!companyId) {
+      return res.status(400).json({
+        success: false,
+        message: "Company ID required"
+      });
+    }
+    
     let startDate, endDate;
 
     const today = new Date();
@@ -752,6 +978,7 @@ exports.getReport = async (req, res) => {
     }
 
     const bills = await Bill.find({
+      companyId,
       billDate: { $gte: startDate, $lte: endDate },
       status: "completed"
     }).sort({ billDate: -1 });
@@ -805,15 +1032,22 @@ exports.getReport = async (req, res) => {
   }
 };
 
-// Add this to your existing billController.js
-
 // ✅ UPDATE PRINT STATUS
 exports.updatePrintStatus = async (req, res) => {
   try {
     const { id } = req.params;
+    const { companyId } = req.query;
     const { printed, printCount } = req.body;
     
-    const bill = await Bill.findById(id);
+    // ✅ Validate companyId
+    if (!companyId) {
+      return res.status(400).json({
+        success: false,
+        message: "Company ID required"
+      });
+    }
+    
+    const bill = await Bill.findOne({ _id: id, companyId });
     if (!bill) {
       return res.status(404).json({
         success: false,
@@ -845,7 +1079,16 @@ exports.updatePrintStatus = async (req, res) => {
 exports.emailBill = async (req, res) => {
   try {
     const { id } = req.params;
+    const { companyId } = req.query;
     const { email, pdfBase64, billNumber } = req.body;
+    
+    // ✅ Validate companyId
+    if (!companyId) {
+      return res.status(400).json({
+        success: false,
+        message: "Company ID required"
+      });
+    }
     
     // Here you would integrate with a email service like nodemailer
     // For now, just return success

@@ -8,7 +8,7 @@ const paymentSchema = new mongoose.Schema({
   },
   paymentMethod: {
     type: String,
-    enum: ['cash', 'upi', 'mixed','credit'],
+    enum: ['cash', 'upi', 'mixed', 'credit'],
     required: true
   },
   date: {
@@ -30,6 +30,13 @@ const paymentSchema = new mongoose.Schema({
 });
 
 const billSchema = new mongoose.Schema({
+  // ✅ ADD COMPANY ID
+  companyId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Company',
+    required: [true, 'Company ID is required'],
+    index: true
+  },
   billNumber: {
     type: String,
     required: true,
@@ -80,7 +87,7 @@ const billSchema = new mongoose.Schema({
   },
   paymentMethod: {
     type: String,
-    enum: ['cash', 'upi', 'card', 'mixed','credit'],
+    enum: ['cash', 'upi', 'card', 'mixed', 'credit'],
     required: true
   },
   customer: {
@@ -108,7 +115,7 @@ const billSchema = new mongoose.Schema({
   },
   cancelledAt: Date,
   
-  // ✅ ADD PAYMENT HISTORY
+  // PAYMENT HISTORY
   paymentHistory: [paymentSchema],
   
   createdAt: {
@@ -121,9 +128,8 @@ const billSchema = new mongoose.Schema({
   }
 });
 
-module.exports = mongoose.model('Bill', billSchema);
 // ✅ TOTAL CALCULATION (NO next)
-billSchema.pre('save', function () {
+billSchema.pre('save', function() {
   this.items = this.items.map(item => ({
     ...item.toObject(),
     total: item.quantity * item.price
@@ -134,9 +140,11 @@ billSchema.pre('save', function () {
   this.total = this.subtotal - this.discountAmount;
 });
 
-
-
-
-
+// ✅ Add compound index for companyId + billNumber
+billSchema.index({ companyId: 1, billNumber: 1 }, { unique: true });
+// ✅ Add index for companyId + billDate for reports
+billSchema.index({ companyId: 1, billDate: -1 });
+// ✅ Add index for companyId + customer name for customer reports
+billSchema.index({ companyId: 1, 'customer.name': 1 });
 
 module.exports = mongoose.model('Bill', billSchema);

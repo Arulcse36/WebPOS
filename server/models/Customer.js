@@ -1,6 +1,12 @@
 const mongoose = require('mongoose');
 
 const customerSchema = new mongoose.Schema({
+  companyId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Company',
+    required: [true, 'Company ID is required'],
+    index: true
+  },
   name: {
     type: String,
     required: true,
@@ -8,8 +14,8 @@ const customerSchema = new mongoose.Schema({
   },
   phone: {
     type: String,
-    trim: true,
-    sparse: true
+    required: true,
+    trim: true
   },
   email: {
     type: String,
@@ -21,21 +27,6 @@ const customerSchema = new mongoose.Schema({
     type: String,
     trim: true
   },
-  gstNumber: {
-    type: String,
-    trim: true
-  },
-    balance: {
-    type: Number,
-    default: 0
-  },
-  totalPurchases: {
-    type: Number,
-    default: 0
-  },
-  lastPurchaseDate: {
-    type: Date
-  },
   createdAt: {
     type: Date,
     default: Date.now
@@ -46,11 +37,14 @@ const customerSchema = new mongoose.Schema({
   }
 });
 
-// Update total purchases when bill is created
-customerSchema.methods.updatePurchaseStats = async function(amount) {
-  this.totalPurchases += amount;
-  this.lastPurchaseDate = new Date();
-  await this.save();
-};
+// Compound index for companyId + phone (unique within company)
+customerSchema.index({ companyId: 1, phone: 1 }, { unique: true });
+
+// Compound index for companyId + email (unique within company)
+customerSchema.index({ companyId: 1, email: 1 }, { unique: true, sparse: true });
+
+// Index for querying customers by company
+customerSchema.index({ companyId: 1, name: 1 });
+customerSchema.index({ companyId: 1, createdAt: -1 });
 
 module.exports = mongoose.model('Customer', customerSchema);

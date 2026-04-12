@@ -3,50 +3,45 @@ const express = require("express");
 const mongoose = require("mongoose");
 const cors = require("cors");
 
-
 const categoryRoutes = require("./routes/categoryRoutes");
 const brandRoutes = require("./routes/brandRoutes");
 const uomRoutes = require("./routes/uomRoutes");
 const productRoutes = require("./routes/productRoutes");
 const billRoutes = require('./routes/billRoutes');
 const customerRoutes = require('./routes/customerRoutes');
+const companyRoutes = require('./routes/companyRoutes');
+const authRoutes = require('./routes/authRoutes');
+const userRoutes = require('./routes/userRoutes'); // ✅ ADD USER ROUTES
 
 const app = express();
 app.use(cors());
 app.use(express.json());
 
-app.use('/bills', billRoutes);  // This will make /billing work
-app.use('/customers', customerRoutes);  // This will make /customers work
+// Routes
+app.use('/bills', billRoutes);
+app.use('/customers', customerRoutes);
 app.use("/categories", categoryRoutes);
 app.use("/brands", brandRoutes);
 app.use("/uoms", uomRoutes);
 app.use("/products", productRoutes);
 app.use('/reports', require('./routes/reportRoutes'));
-
+app.use('/companies', companyRoutes);
+app.use('/admin', authRoutes);
+app.use('/users', userRoutes); // ✅ ADD USER ROUTES - User management
 
 // Connect MongoDB
-// mongoose.connect("mongodb://127.0.0.1:27017/todo_db")
-//   .then(() => console.log("MongoDB Connected"))
-//   .catch(err => console.log(err));
-
-
-// mongoose.connect("mongodb+srv://arulcse3:9965899817@cluster0.apvzp.mongodb.net/todo_db")
-//   .then(() => console.log("MongoDB Connected"))
-//   .catch(err => console.log(err));
-
-
-// 👉 CONNECT TO MONGODB HERE
 mongoose.connect(process.env.MONGO_URI)
   .then(() => console.log("MongoDB Connected"))
   .catch(err => console.log(err));
 
-  // Routes
+// Routes
 app.get("/", (req, res) => {
   res.send("API Running");
 });
 
-
 const Invoice = require("./models/Invoice");
+const Product = require("./models/Product");
+const Bill = require("./models/Bill");
 
 app.post("/billing", async (req, res) => {
   try {
@@ -70,7 +65,6 @@ app.post("/billing", async (req, res) => {
     });
 
     const saved = await invoice.save();
-
     res.json(saved);
 
   } catch (err) {
@@ -78,12 +72,10 @@ app.post("/billing", async (req, res) => {
   }
 });
 
-
 // GET /bills/customers
 app.get('/bills/customers', async (req, res) => {
   try {
     const customers = await Bill.distinct('customer');
-    // Filter out null/undefined and sort
     const filteredCustomers = customers.filter(c => c && c.trim() !== '').sort();
     res.json({ success: true, customers: filteredCustomers });
   } catch (error) {
@@ -91,11 +83,13 @@ app.get('/bills/customers', async (req, res) => {
   }
 });
 
-
 // Server start
 const PORT = process.env.PORT || 5000;
 
-// Start server
-app.listen(5000, "0.0.0.0", () => {
-  console.log("Server running on port 5000");
+app.listen(PORT, "0.0.0.0", () => {
+  console.log(`Server running on port ${PORT}`);
+  console.log(`✅ Super Admin Login: http://localhost:${PORT}/admin`);
+  console.log(`✅ Company Login: http://localhost:${PORT}/admin/login`);
+  console.log(`✅ Companies API: http://localhost:${PORT}/companies`);
+  console.log(`✅ Users API: http://localhost:${PORT}/api/users`);
 });

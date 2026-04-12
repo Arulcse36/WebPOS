@@ -102,7 +102,7 @@ const ReportsMenu = ({ open, toggle, onNavigate }) => (
   </div>
 );
 
-const ProductsMenu = ({ open, toggle, onNavigate }) => (
+const ProductsMenu = ({ open, toggle, onNavigate, isSuperAdmin }) => (
   <div>
     <button onClick={toggle} className={toggleBtnClass}>
       <span className="flex items-center gap-3">📦 Products</span>
@@ -121,9 +121,12 @@ const ProductsMenu = ({ open, toggle, onNavigate }) => (
         <NavLink to="/products/brand" className={({ isActive }) => subItemClass(isActive)} onClick={onNavigate}>
           🏷 Brand
         </NavLink>
-        <NavLink to="/products/uom" className={({ isActive }) => subItemClass(isActive)} onClick={onNavigate}>
-          📐 UOM
-        </NavLink>
+        {/* UOM - Only show for Super Admin */}
+        {isSuperAdmin && (
+          <NavLink to="/products/uom" className={({ isActive }) => subItemClass(isActive)} onClick={onNavigate}>
+            📐 UOM
+          </NavLink>
+        )}
         <NavLink to="/products/product" className={({ isActive }) => subItemClass(isActive)} onClick={onNavigate}>
           🛒 Product
         </NavLink>
@@ -132,8 +135,8 @@ const ProductsMenu = ({ open, toggle, onNavigate }) => (
   </div>
 );
 
-// ─── Sidebar content ──────────────────────────────────────────────────────────
-const SidebarContent = ({ openProducts, setOpenProducts, openReports, setOpenReports, closeSidebar }) => {
+// ─── Sidebar content with conditional rendering ──────────────────────────────
+const SidebarContent = ({ openProducts, setOpenProducts, openReports, setOpenReports, closeSidebar, isSuperAdmin, userRole }) => {
   const closeAll = () => {
     setOpenProducts(false);
     setOpenReports(false);
@@ -142,6 +145,13 @@ const SidebarContent = ({ openProducts, setOpenProducts, openReports, setOpenRep
 
   return (
     <nav className="flex flex-col gap-1">
+      {/* Company - Only show for Super Admin */}
+      {isSuperAdmin && (
+        <NavLink to="/company" className={({ isActive }) => menuItemClass(isActive)} onClick={closeAll}>
+          🏢 Company
+        </NavLink>
+      )}
+
       <NavLink to="/" className={({ isActive }) => menuItemClass(isActive)} onClick={closeAll}>
         🏠 Dashboard
       </NavLink>
@@ -150,11 +160,19 @@ const SidebarContent = ({ openProducts, setOpenProducts, openReports, setOpenRep
         open={openProducts}
         toggle={() => setOpenProducts((p) => !p)}
         onNavigate={closeSidebar}
+        isSuperAdmin={isSuperAdmin}
       />
 
       <NavLink to="/customer" className={({ isActive }) => menuItemClass(isActive)} onClick={closeAll}>
         📝 Customer
       </NavLink>
+
+      {/* Users - Show for Super Admin and Company Admin (not for regular company users) */}
+      {(isSuperAdmin || userRole === 'admin') && (
+        <NavLink to="/users" className={({ isActive }) => menuItemClass(isActive)} onClick={closeAll}>
+          👥 Users
+        </NavLink>
+      )}
 
       <NavLink to="/pos" className={({ isActive }) => menuItemClass(isActive)} onClick={closeAll}>
         🧾 POS
@@ -170,7 +188,7 @@ const SidebarContent = ({ openProducts, setOpenProducts, openReports, setOpenRep
 };
 
 // ─── Main Layout ──────────────────────────────────────────────────────────────
-const Layout = () => {
+const Layout = ({ onLogout, user, isSuperAdmin }) => {
   useGlobalStyle(GLOBAL_STYLE);
 
   const navigate = useNavigate();
@@ -180,6 +198,9 @@ const Layout = () => {
   const [openProducts, setOpenProducts] = useState(false);
   const [openReports, setOpenReports] = useState(false);
   const [openSidebar, setOpenSidebar] = useState(false);
+  
+  // Get user role from localStorage or user object
+  const userRole = localStorage.getItem("userType") || user?.role || "user";
 
   // Lock body scroll when sidebar is open (prevents background scroll on Android)
   useEffect(() => {
@@ -188,6 +209,14 @@ const Layout = () => {
   }, [openSidebar]);
 
   const closeSidebar = () => setOpenSidebar(false);
+
+  const handleLogout = () => {
+    if (window.confirm("Are you sure you want to logout?")) {
+      if (onLogout) {
+        onLogout();
+      }
+    }
+  };
 
   return (
     <div className="min-h-screen min-h-dvh bg-slate-900 text-white">
@@ -226,22 +255,44 @@ const Layout = () => {
           Bill Mate 
         </NavLink>
 
-        {/* Back button — right corner, hidden on home */}
-        {!isHome ? (
+        {/* Right side - User Info & Logout */}
+        <div className="flex items-center gap-2">
+          {/* User Info - Different for Super Admin vs Company Admin vs Company User */}
+          {user && (
+            <div className="hidden sm:block text-right mr-1">
+              {isSuperAdmin ? (
+                <>
+                  <span className="text-sm text-purple-300">Super Admin</span>
+                  <div className="text-xs text-purple-400">👑 {user.username}</div>
+                </>
+              ) : userRole === 'admin' ? (
+                <>
+                  <span className="text-sm text-slate-300">{user.companyName}</span>
+                  <div className="text-xs text-slate-400">👨‍💼 Admin: {user.username}</div>
+                </>
+              ) : (
+                <>
+                  <span className="text-sm text-slate-300">{user.companyName}</span>
+                  <div className="text-xs text-slate-400">👤 User: {user.name || user.username}</div>
+                </>
+              )}
+            </div>
+          )}
+          
+          {/* Logout Button */}
           <button
-            onClick={() => navigate(-1)}
+            onClick={handleLogout}
             className="flex items-center justify-center w-12 h-12 -mr-2 rounded-xl
                        text-slate-300 hover:bg-slate-700 active:bg-slate-600
                        active:scale-95 transition-all duration-150"
-            aria-label="Go back"
+            aria-label="Logout"
+            title="Logout"
           >
             <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
-              <path d="M13 4L7 10L13 16" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"/>
+              <path d="M13 4L17 10L13 16M7 10H17M3 4H5V16H3V4Z" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
             </svg>
           </button>
-        ) : (
-          <div className="w-12" />
-        )}
+        </div>
       </div>
 
       {/* ── Sidebar Drawer ───────────────────────────────────────────────── */}
@@ -272,9 +323,16 @@ const Layout = () => {
             paddingBottom: "env(safe-area-inset-bottom, 0px)",
           }}
         >
-          {/* Drawer header */}
+          {/* Drawer header with user info */}
           <div className="flex items-center justify-between px-4 py-4 border-b border-slate-700/60">
-            <span className="font-bold text-base text-white">Menu</span>
+            <div className="flex flex-col">
+              <span className="font-bold text-base text-white">Menu</span>
+              {user && (
+                <span className="text-xs text-slate-400 mt-1">
+                  {isSuperAdmin ? 'Super Admin' : user.companyName}
+                </span>
+              )}
+            </div>
             <button
               onClick={closeSidebar}
               className="flex items-center justify-center w-10 h-10 rounded-xl
@@ -296,7 +354,15 @@ const Layout = () => {
               openReports={openReports}
               setOpenReports={setOpenReports}
               closeSidebar={closeSidebar}
+              isSuperAdmin={isSuperAdmin}
+              userRole={userRole}
             />
+          </div>
+          
+          {/* Footer in sidebar - optional */}
+          <div className="p-4 border-t border-slate-700/60 text-xs text-slate-500">
+            <p>Bill Mate POS System</p>
+            <p className="mt-1">v1.0.0</p>
           </div>
         </div>
       </div>

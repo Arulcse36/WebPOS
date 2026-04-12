@@ -237,6 +237,9 @@ const POS = () => {
   const [discount, setDiscount] = useState(0);
   const [paymentMethod, setPaymentMethod] = useState("cash");
 
+  // Company filter - Get companyId from localStorage
+  const companyId = localStorage.getItem("companyId");
+
   // Price editing states
   const [showEditPriceModal, setShowEditPriceModal] = useState(false);
   const [selectedEditItem, setSelectedEditItem] = useState(null);
@@ -268,7 +271,7 @@ const POS = () => {
   const [dueAmount, setDueAmount] = useState(0);
   const [creditType, setCreditType] = useState("full");
 
-  // Add this state near other state declarations (around line 100-120)
+  // Add this state near other state declarations
   const [showSearchBox, setShowSearchBox] = useState(false);
 
   // Mobile UI State
@@ -276,12 +279,62 @@ const POS = () => {
   // Sidebar state for desktop
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
 
+  // Refs for scroll management
+  const productsContainerRef = useRef(null);
+  const mainContainerRef = useRef(null);
+
   const debouncedSearch = useDebounce(search, 300);
   const debouncedCustomerSearch = useDebounce(customerSearch, 300);
 
   const isRegisteredCustomer = useMemo(() => {
     return selectedCustomer !== null && selectedCustomer._id;
   }, [selectedCustomer]);
+
+  // ========== SCROLL TO TOP FIX ==========
+  useEffect(() => {
+    // Immediate scroll to top
+    window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
+    
+    // Scroll main container to top
+    if (mainContainerRef.current) {
+      mainContainerRef.current.scrollTop = 0;
+    }
+    
+    // Scroll products container to top
+    if (productsContainerRef.current) {
+      productsContainerRef.current.scrollTop = 0;
+    }
+    
+    // Scroll any other scrollable elements
+    const scrollableElements = document.querySelectorAll(
+      '.overflow-y-auto, .overflow-auto, .flex-1.overflow-y-auto'
+    );
+    scrollableElements.forEach(element => {
+      element.scrollTop = 0;
+    });
+    
+    // Small delay to ensure DOM is fully rendered
+    const timer = setTimeout(() => {
+      window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
+      if (productsContainerRef.current) {
+        productsContainerRef.current.scrollTop = 0;
+      }
+    }, 100);
+    
+    return () => clearTimeout(timer);
+  }, []); // Runs once on component mount
+
+  // Also scroll when billId changes (when editing a bill)
+  useEffect(() => {
+    if (billId) {
+      setTimeout(() => {
+        window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
+        if (productsContainerRef.current) {
+          productsContainerRef.current.scrollTop = 0;
+        }
+      }, 100);
+    }
+  }, [billId]);
 
   // Initialize date/time
   useEffect(() => {
@@ -303,7 +356,10 @@ const POS = () => {
       if (billId) {
         setIsEditMode(true);
         try {
-          const response = await axios.get(`${API}/bills/${billId}`);
+          // ✅ FIX: Add companyId as query parameter
+          const response = await axios.get(`${API}/bills/${billId}`, {
+            params: { companyId: companyId }
+          });
           const bill = response.data;
 
           setBillNumber(bill.billNumber || bill.id || "N/A");
@@ -341,14 +397,21 @@ const POS = () => {
           }
         } catch (error) {
           console.error("Error loading bill:", error);
-          alert("Failed to load bill for editing");
+          if (error.response) {
+            console.error("Server response:", error.response.data);
+            alert(`Failed to load bill: ${error.response.data.message || error.message}`);
+          } else {
+            alert("Failed to load bill for editing");
+          }
           navigate('/reports');
         }
       }
     };
 
-    loadBillForEdit();
-  }, [billId, navigate]);
+    if (companyId) {
+      loadBillForEdit();
+    }
+  }, [billId, navigate, companyId]);
 
   // Reset date when cart opens for new bill
   useEffect(() => {
@@ -430,10 +493,12 @@ const POS = () => {
     setEditPriceValue("");
   }, [selectedEditItem, editPriceValue]);
 
+  // ✅ UPDATED: Only include active products for categories and brands
   const { categories, brands } = useMemo(() => {
     const cats = new Set();
     const brnds = new Set();
-    products.forEach(product => {
+    const activeProducts = products.filter(product => product.isActive === true);
+    activeProducts.forEach(product => {
       const category = getSafeString(product.category);
       if (category) cats.add(category);
       const brand = getSafeString(product.brand);
@@ -446,16 +511,18 @@ const POS = () => {
   }, [products]);
 
   const fetchCustomers = useCallback(async () => {
+    if (!companyId) return;
+    
     setCustomerLoading(true);
     try {
-      const res = await axios.get(`${API}/customers`, { timeout: 8000 });
+      const res = await axios.get(`${API}/customers?companyId=${companyId}`, { timeout: 8000 });
       setCustomers(res.data);
     } catch (error) {
       console.error("Fetch customers error:", error);
     } finally {
       setCustomerLoading(false);
     }
-  }, []);
+  }, [companyId]);
 
   const filteredCustomers = useMemo(() => {
     if (!debouncedCustomerSearch) return customers;
@@ -466,21 +533,34 @@ const POS = () => {
     );
   }, [customers, debouncedCustomerSearch]);
 
+  // ✅ UPDATED: Fetch only active products from API
   const fetchProducts = useCallback(async () => {
+    if (!companyId) return;
+    
     setLoading(true);
     try {
-      const res = await axios.get(`${API}/products`, { timeout: 8000 });
-      setProducts(res.data);
+      const res = await axios.get(`${API}/products?companyId=${companyId}`, { timeout: 8000 });
+      // Filter to ensure only active products are stored
+      const activeProducts = res.data.filter(product => product.isActive === true);
+      setProducts(activeProducts);
     } catch (error) {
       console.error("Fetch error:", error);
       alert("Failed to fetch products. Please check your connection.");
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [companyId]);
 
-  useEffect(() => { fetchProducts(); }, [fetchProducts]);
-  useEffect(() => { fetchCustomers(); }, [fetchCustomers]);
+  // Initial data loading with company filter
+  useEffect(() => {
+    if (!companyId) {
+      alert("No company associated. Please login again.");
+      navigate('/login');
+      return;
+    }
+    fetchProducts();
+    fetchCustomers();
+  }, [companyId, fetchProducts, fetchCustomers, navigate]);
 
   useEffect(() => {
     if (!isEditMode && !billId) {
@@ -583,8 +663,12 @@ const POS = () => {
     }
   }, [search, products]);
 
+  // ✅ UPDATED: Only show active products in filtered results
   const filteredProducts = useMemo(() =>
     products.filter(p => {
+      // Only include active products
+      if (p.isActive !== true) return false;
+      
       const matchesSearch = p.name.toLowerCase().includes(debouncedSearch.toLowerCase());
       const productCategory = getSafeString(p.category);
       const productBrand = getSafeString(p.brand);
@@ -642,6 +726,12 @@ const POS = () => {
   }, [removeItem]);
 
   const handleAddToCart = useCallback((product) => {
+    // Only allow adding if product is active
+    if (product.isActive !== true) {
+      alert(`${product.name} is not available for sale.`);
+      return;
+    }
+    
     const price = roundToTwoDecimals(product.retailRate);
     const incrementValue = 1;
 
@@ -671,7 +761,7 @@ const POS = () => {
   }, []);
 
   const incrementDiscount = useCallback(() => {
-    setDiscount(prev => Math.min(100, prev + 1));
+    setDiscount(prev => Math.min(100, prev + 5));
   }, []);
 
   const decrementDiscount = useCallback(() => {
@@ -708,8 +798,19 @@ const POS = () => {
       return;
     }
 
+    if (!companyId) {
+      alert("No company associated");
+      return;
+    }
+
     try {
-      const res = await axios.post(`${API}/customers`, newCustomer);
+      const res = await axios.post(`${API}/customers`, {
+        companyId: companyId,
+        name: newCustomer.name,
+        phone: newCustomer.phone,
+        email: newCustomer.email,
+        address: newCustomer.address
+      });
       if (res.data.success || res.data._id) {
         const createdCustomer = res.data;
         setCustomers(prev => [...prev, createdCustomer]);
@@ -723,7 +824,7 @@ const POS = () => {
       console.error("Create customer error:", error);
       alert("Failed to create customer. Please try again.");
     }
-  }, [newCustomer]);
+  }, [newCustomer, companyId]);
 
   const processCheckout = useCallback(async (paymentData = null) => {
     if (cart.length === 0) {
@@ -740,6 +841,7 @@ const POS = () => {
       const finalUpiPaid = paymentData ? roundToTwoDecimals(paymentData.upiPaid || 0) : (finalPaymentMethod === 'upi' ? total : 0);
 
       const payload = {
+        companyId: companyId,
         items: cart.map(i => ({
           productId: i.product,
           productName: i.name,
@@ -765,7 +867,10 @@ const POS = () => {
 
       let res;
       if (isEditMode && billId) {
-        res = await axios.put(`${API}/bills/${billId}`, payload);
+        // ✅ FIX: Add companyId as query parameter for update
+        res = await axios.put(`${API}/bills/${billId}`, payload, {
+          params: { companyId: companyId }
+        });
       } else {
         res = await axios.post(`${API}/bills`, payload);
       }
@@ -843,7 +948,7 @@ const POS = () => {
     } finally {
       setCheckoutLoading(false);
     }
-  }, [cart, discountAmount, paymentMethod, total, selectedCustomer, fetchProducts, closeCart, billDate, isEditMode, billId, navigate, billNumber]);
+  }, [cart, discountAmount, paymentMethod, total, selectedCustomer, fetchProducts, closeCart, billDate, isEditMode, billId, navigate, billNumber, companyId, discount]);
 
   const handleFullCredit = useCallback(() => {
     setCreditType("full");
@@ -986,10 +1091,11 @@ const POS = () => {
     setSearch("");
   };
 
-  // Get category counts for sidebar display
+  // ✅ UPDATED: Only count active products for category counts
   const categoryCounts = useMemo(() => {
     const counts = {};
-    products.forEach(product => {
+    const activeProducts = products.filter(product => product.isActive === true);
+    activeProducts.forEach(product => {
       const category = getSafeString(product.category);
       if (category) {
         counts[category] = (counts[category] || 0) + 1;
@@ -998,10 +1104,30 @@ const POS = () => {
     return counts;
   }, [products]);
 
-  return (
-    <div className="relative flex flex-col h-screen bg-gray-50 text-black overflow-hidden">
-     
+  // Show loading or redirect if no company
+  if (!companyId) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <div className="bg-white p-8 rounded-xl shadow-lg text-center max-w-md">
+          <div className="text-6xl mb-4">🏢</div>
+          <h2 className="text-xl font-bold text-gray-800 mb-2">No Company Associated</h2>
+          <p className="text-gray-600 mb-4">Please login again to access the POS system.</p>
+          <button
+            onClick={() => navigate('/login')}
+            className="bg-blue-600 text-white px-6 py-2 rounded-lg font-semibold hover:bg-blue-700"
+          >
+            Go to Login
+          </button>
+        </div>
+      </div>
+    );
+  }
 
+  return (
+    <div 
+      ref={mainContainerRef}
+      className="relative flex flex-col h-screen bg-gray-50 text-black overflow-hidden"
+    >
       {/* Customer Selection Modal */}
       {showCustomerModal && (
         <div className="fixed inset-0 bg-black/50 z-[100] flex items-center justify-center p-4">
@@ -1282,21 +1408,21 @@ const POS = () => {
         {/* Category Sidebar - Desktop */}
         {categories.length > 0 && (
           <div className={`
-    hidden md:block bg-white border-r border-gray-200 transition-all duration-300 overflow-y-auto
-    ${isSidebarOpen ? 'w-64' : 'w-0'}
-  `}>
+            hidden md:block bg-white border-r border-gray-200 transition-all duration-300 overflow-y-auto
+            ${isSidebarOpen ? 'w-64' : 'w-0'}
+          `}>
             {isSidebarOpen && (
               <div className="p-4">
                 {/* All Categories Option */}
                 <button
                   onClick={() => setSelectedCategory("")}
                   className={`
-            w-full text-left p-2 rounded-lg mb-1 transition-all
-            ${!selectedCategory
+                    w-full text-left p-2 rounded-lg mb-1 transition-all
+                    ${!selectedCategory
                       ? 'bg-blue-600 text-white shadow-sm'
                       : 'hover:bg-gray-100 text-gray-700'
                     }
-          `}
+                  `}
                 >
                   <div className="flex justify-between items-center">
                     <span className="font-medium text-sm">All Categories</span>
@@ -1313,12 +1439,12 @@ const POS = () => {
                       key={`sidebar-category-${category}`}
                       onClick={() => setSelectedCategory(category)}
                       className={`
-                w-full text-left p-2 rounded-lg transition-all
-                ${selectedCategory === category
+                        w-full text-left p-2 rounded-lg transition-all
+                        ${selectedCategory === category
                           ? 'bg-blue-600 text-white shadow-sm'
                           : 'hover:bg-gray-100 text-gray-700'
                         }
-              `}
+                      `}
                     >
                       <div className="flex justify-between items-center">
                         <span className="text-sm truncate flex-1">{category}</span>
@@ -1362,14 +1488,15 @@ const POS = () => {
         )}
 
         {/* Products Area */}
-        <div className="flex-1 overflow-y-auto p-3 md:p-4">
+        <div 
+          ref={productsContainerRef}
+          className="flex-1 overflow-y-auto p-3 md:p-4"
+        >
           {isEditMode && (
             <div className="mb-3 p-2 bg-yellow-100 border border-yellow-300 rounded-lg text-sm text-yellow-800">
               Editing bill #{billNumber} - Modify items, discount, or customer details
             </div>
           )}
-
-
 
           {/* Search Bar */}
           <div className="space-y-3 mb-4">
@@ -1401,14 +1528,13 @@ const POS = () => {
             )}
           </div>
 
-          {/* Also update the mobile category filter section to maintain consistency */}
           {/* Mobile Category Filter - Visible only on mobile */}
-          <div className="md:hidden flex flex-wrap gap-2 items-center">
+          <div className="md:hidden flex flex-wrap gap-2 items-center mb-3">
             <button
               onClick={toggleSearchBox}
               className="px-2 py-1.5 bg-gray-200 hover:bg-gray-300 rounded-lg text-xs font-medium transition-colors"
             >
-              {showSearchBox ? '🔍' : '🔍 Hide'}
+              {showSearchBox ? '🔍 Hide' : '🔍 Show'}
             </button>
 
             {categories.length > 0 && (
@@ -1454,7 +1580,7 @@ const POS = () => {
           ) : (
             <>
               <div className="text-xs text-gray-500 mb-2">
-                Showing {filteredProducts.length} of {products.length} products
+                Showing {filteredProducts.length} of {products.length} active products
                 {selectedCategory && <span> • Category: {selectedCategory}</span>}
                 {selectedBrand && <span> • Brand: {selectedBrand}</span>}
               </div>
@@ -1471,7 +1597,7 @@ const POS = () => {
               </div>
               {filteredProducts.length === 0 && (
                 <div className="text-center py-8 text-gray-400 text-sm">
-                  No products found
+                  No active products found
                 </div>
               )}
             </>

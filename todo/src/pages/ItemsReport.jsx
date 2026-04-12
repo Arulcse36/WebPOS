@@ -100,6 +100,9 @@ const ItemsReport = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
+  // Get companyId from localStorage
+  const companyId = localStorage.getItem("companyId");
+
   // Filters
   const [categoryFilter, setCategoryFilter] = useState("");
   const [customerFilter, setCustomerFilter] = useState("");
@@ -126,38 +129,45 @@ const ItemsReport = () => {
     }
   }, [type]);
 
-  // ── Fetch customers ──────────────────────────────────────────────────────
+  // ── Fetch customers (with company filter) ─────────────────────────────────
   useEffect(() => {
     const fetchCustomers = async () => {
+      if (!companyId) return;
       try {
-        const res = await axios.get(`${API}/bills/customers`);
+        const res = await axios.get(`${API}/bills/customers?companyId=${companyId}`);
         if (res.data.success) setCustomers(res.data.customers);
       } catch (e) {
         console.error("Customers fetch error:", e);
       }
     };
     fetchCustomers();
-  }, []);
+  }, [companyId]);
 
-  // ── Fetch products (for category lookup) ─────────────────────────────────
+  // ── Fetch products (with company filter) ─────────────────────────────────
   useEffect(() => {
     const fetchProducts = async () => {
+      if (!companyId) return;
       try {
-        const res = await axios.get(`${API}/products`);
+        const res = await axios.get(`${API}/products?companyId=${companyId}`);
         setProducts(res.data);
       } catch (e) {
         console.error("Products fetch error:", e);
       }
     };
     fetchProducts();
-  }, []);
+  }, [companyId]);
 
-  // ── Fetch bills ──────────────────────────────────────────────────────────
+  // ── Fetch bills (with company filter) ────────────────────────────────────
   const fetchReport = async () => {
+    if (!companyId) {
+      setError("No company associated. Please login again.");
+      return;
+    }
+    
     setLoading(true);
     setError(null);
     try {
-      let url = `${API}/reports/bills?type=${type}`;
+      let url = `${API}/reports/bills?type=${type}&companyId=${companyId}`;
       if (type === "custom") {
         if (!from || !to) { alert("Please select date range"); setLoading(false); return; }
         url += `&from=${from}&to=${to}`;
@@ -175,7 +185,21 @@ const ItemsReport = () => {
     }
   };
 
-  useEffect(() => { fetchReport(); }, [type, from, to, customerFilter]);
+  useEffect(() => { 
+    if (companyId) {
+      fetchReport(); 
+    }
+  }, [type, from, to, customerFilter, companyId]);
+
+  // ── Redirect if no company ───────────────────────────────────────────────
+  useEffect(() => {
+    if (!companyId) {
+      const timer = setTimeout(() => {
+        window.location.href = '/login';
+      }, 3000);
+      return () => clearTimeout(timer);
+    }
+  }, [companyId]);
 
   // ── Build name → category lookup from products list ───────────────────────
   const productCategoryMap = useMemo(() => {
@@ -353,6 +377,21 @@ const ItemsReport = () => {
       alert("Failed to print. Make sure RawBT is installed.");
     }
   };
+
+  // Show loading or redirect if no company
+  if (!companyId) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4">
+        <div className="bg-white rounded-xl shadow-lg p-8 text-center max-w-md">
+          <div className="text-6xl mb-4">🏢</div>
+          <h2 className="text-xl font-bold text-gray-800 mb-2">No Company Associated</h2>
+          <p className="text-gray-600 mb-4">Please login again to access items report.</p>
+          <div className="inline-block w-8 h-8 border-4 border-blue-200 border-t-blue-600 rounded-full animate-spin"></div>
+          <p className="text-sm text-gray-500 mt-3">Redirecting to login...</p>
+        </div>
+      </div>
+    );
+  }
 
   // ── Render ─────────────────────────────────────────────────────────────────
   return (

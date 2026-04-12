@@ -1,6 +1,12 @@
 const mongoose = require("mongoose");
 
 const counterSchema = new mongoose.Schema({
+   companyId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Company',
+        required: [true, 'Company ID is required'],
+        index: true
+      },
   name: {
     type: String,
     required: true,
