@@ -12,7 +12,6 @@ import Report from "./pages/Report";
 import ItemsReport from './pages/ItemsReport';
 import Company from './pages/Company';
 import Users from './pages/Users';
-
 import SuperAdminLogin from './pages/SuperAdminLogin';
 import CompanyLogin from './pages/CompanyLogin';
 
@@ -68,16 +67,15 @@ const App = () => {
     <BrowserRouter>
       <Routes>
         {/* Public Routes - No Layout */}
-                <Route path="/login" element={<CompanyLogin onLogin={handleLogin} />} />
+        <Route path="/login" element={<CompanyLogin onLogin={handleLogin} />} />
         <Route path="/admin" element={<SuperAdminLogin onLogin={handleLogin} />} />
-
         
         {/* Protected Routes - With Layout */}
         <Route path="/" element={
           isAuthenticated ? (
             <Layout onLogout={handleLogout} user={user} isSuperAdmin={isSuperAdmin} />
           ) : (
-            <Navigate to="/admin" replace />
+            <Navigate to="/login" replace />  // ✅ Changed from "/admin" to "/login"
           )
         }>
           {/* Super Admin Routes */}
