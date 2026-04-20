@@ -6,7 +6,6 @@ const API = import.meta.env.VITE_API_URL;
 
 const PaymentReport = () => {
     const [payments, setPayments] = useState([]);
-    const [billSummary, setBillSummary] = useState([]);
     const [summary, setSummary] = useState({
         totalCash: 0,
         totalUpi: 0,
@@ -19,7 +18,6 @@ const PaymentReport = () => {
     const [period, setPeriod] = useState("daily");
     const [from, setFrom] = useState("");
     const [to, setTo] = useState("");
-    const [viewMode, setViewMode] = useState("entries");
     
     // Customer filter states
     const [customerFilter, setCustomerFilter] = useState("");
@@ -79,55 +77,46 @@ const PaymentReport = () => {
         }
     }, [companyId, period, from, to, customerFilter]);
 
-// In PaymentReport.jsx, update the fetchPaymentReport function:
-
-const fetchPaymentReport = async () => {
-    if (!companyId) return;
-    
-    setLoading(true);
-    setError(null);
-    
-    try {
-        let url = `${API}/payment-reports/payment-report?companyId=${companyId}&period=${period}`;
+    const fetchPaymentReport = async () => {
+        if (!companyId) return;
         
-        // Add date parameters based on period
-        if (period === "daily") {
-            // No need to add date params, backend will handle today's date
-        } else if (period === "weekly") {
-            // No need to add date params, backend will handle last 7 days
-        } else if (period === "monthly") {
-            // No need to add date params, backend will handle current month
-        } else if (period === "custom") {
-            if (from && to) {
-                url += `&startDate=${from}&endDate=${to}`;
+        setLoading(true);
+        setError(null);
+        
+        try {
+            let url = `${API}/payment-reports/payment-report?companyId=${companyId}&period=${period}`;
+            
+            // Add date parameters based on period
+            if (period === "custom") {
+                if (from && to) {
+                    url += `&startDate=${from}&endDate=${to}`;
+                }
             }
+            
+            // Add customer filter if selected
+            if (customerFilter) {
+                url += `&customer=${encodeURIComponent(customerFilter)}`;
+            }
+            
+            const res = await axios.get(url, { timeout: 15000 });
+            
+            if (res.data.success) {
+                setPayments(res.data.paymentEntries || []);
+                setSummary(res.data.summary || {
+                    totalCash: 0,
+                    totalUpi: 0,
+                    totalPaid: 0,
+                    totalTransactions: 0,
+                    totalBills: 0
+                });
+            }
+        } catch (err) {
+            console.error("Error fetching payment report:", err);
+            setError(err.response?.data?.error || "Failed to load payment report");
+        } finally {
+            setLoading(false);
         }
-        
-        // Add customer filter if selected
-        if (customerFilter) {
-            url += `&customer=${encodeURIComponent(customerFilter)}`;
-        }
-        
-        const res = await axios.get(url, { timeout: 15000 });
-        
-        if (res.data.success) {
-            setPayments(res.data.paymentEntries || []);
-            setBillSummary(res.data.billSummary || []);
-            setSummary(res.data.summary || {
-                totalCash: 0,
-                totalUpi: 0,
-                totalPaid: 0,
-                totalTransactions: 0,
-                totalBills: 0
-            });
-        }
-    } catch (err) {
-        console.error("Error fetching payment report:", err);
-        setError(err.response?.data?.error || "Failed to load payment report");
-    } finally {
-        setLoading(false);
-    }
-};
+    };
 
     const formatDate = (date) => {
         if (!date) return "N/A";
@@ -285,30 +274,6 @@ const fetchPaymentReport = async () => {
                     </div>
                 </div>
 
-                {/* View Tabs */}
-                <div className="flex gap-2 mb-4">
-                    <button
-                        onClick={() => setViewMode("entries")}
-                        className={`px-4 py-2 rounded-lg font-medium transition-colors ${
-                            viewMode === "entries"
-                                ? "bg-blue-600 text-white"
-                                : "bg-gray-200 text-gray-700 hover:bg-gray-300"
-                        }`}
-                    >
-                        📋 Payment Entries
-                    </button>
-                    <button
-                        onClick={() => setViewMode("bills")}
-                        className={`px-4 py-2 rounded-lg font-medium transition-colors ${
-                            viewMode === "bills"
-                                ? "bg-blue-600 text-white"
-                                : "bg-gray-200 text-gray-700 hover:bg-gray-300"
-                        }`}
-                    >
-                        🧾 Bill Summary
-                    </button>
-                </div>
-
                 {/* Loading State */}
                 {loading && (
                     <div className="flex justify-center py-12">
@@ -327,7 +292,7 @@ const fetchPaymentReport = async () => {
                 )}
 
                 {/* Payment Entries View */}
-                {!loading && !error && viewMode === "entries" && (
+                {!loading && !error && (
                     <div className="bg-white rounded-xl shadow-sm overflow-hidden">
                         <div className="overflow-x-auto">
                             <table className="w-full text-sm">
@@ -394,92 +359,7 @@ const fetchPaymentReport = async () => {
                                             <td className="px-4 py-3 text-right font-bold text-gray-900">
                                                 {formatCurrency(payments.reduce((sum, p) => sum + p.amount, 0))}
                                             </td>
-                                            <td>\n                                            </td>
-                                        </tr>
-                                    </tfoot>
-                                )}
-                            </table>
-                        </div>
-                    </div>
-                )}
-
-                {/* Bill Summary View */}
-                {!loading && !error && viewMode === "bills" && (
-                    <div className="bg-white rounded-xl shadow-sm overflow-hidden">
-                        <div className="overflow-x-auto">
-                            <table className="w-full text-sm">
-                                <thead className="bg-gray-50 border-b border-gray-200">
-                                    <tr>
-                                        <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600">Bill No</th>
-                                        <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600">Bill Date</th>
-                                        <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600">Customer</th>
-                                        <th className="px-4 py-3 text-right text-xs font-semibold text-gray-600">Bill Total</th>
-                                        <th className="px-4 py-3 text-right text-xs font-semibold text-gray-600">Cash Paid</th>
-                                        <th className="px-4 py-3 text-right text-xs font-semibold text-gray-600">UPI Paid</th>
-                                        <th className="px-4 py-3 text-right text-xs font-semibold text-gray-600">Total Paid</th>
-                                        <th className="px-4 py-3 text-right text-xs font-semibold text-gray-600">Due Amount</th>
-                                        <th className="px-4 py-3 text-center text-xs font-semibold text-gray-600">Payments</th>
-                                    </tr>
-                                </thead>
-                                <tbody className="divide-y divide-gray-100">
-                                    {billSummary.length === 0 ? (
-                                        <tr>
-                                            <td colSpan="9" className="px-4 py-8 text-center text-gray-400">
-                                                No bills found
-                                            </td>
-                                        </tr>
-                                    ) : (
-                                        billSummary.map((bill, idx) => (
-                                            <tr key={idx} className="hover:bg-gray-50 transition-colors">
-                                                <td className="px-4 py-3 font-medium text-gray-900">#{bill.billNumber}</td>
-                                                <td className="px-4 py-3 text-gray-600">{formatDate(bill.billDate)}</td>
-                                                <td className="px-4 py-3 text-gray-700">{bill.customerName}</td>
-                                                <td className="px-4 py-3 text-right font-semibold text-gray-900">
-                                                    {formatCurrency(bill.billTotal || 0)}
-                                                </td>
-                                                <td className="px-4 py-3 text-right font-semibold text-green-600">
-                                                    {formatCurrency(bill.totalCash)}
-                                                </td>
-                                                <td className="px-4 py-3 text-right font-semibold text-blue-600">
-                                                    {formatCurrency(bill.totalUpi)}
-                                                </td>
-                                                <td className="px-4 py-3 text-right font-bold text-gray-900">
-                                                    {formatCurrency(bill.totalPaid)}
-                                                </td>
-                                                <td className="px-4 py-3 text-right font-semibold text-red-600">
-                                                    {formatCurrency((bill.billTotal || 0) - bill.totalPaid)}
-                                                </td>
-                                                <td className="px-4 py-3 text-center">
-                                                    <span className="inline-flex items-center justify-center px-2 py-1 rounded-full text-xs font-semibold bg-gray-100 text-gray-700">
-                                                        {bill.paymentCount} {bill.paymentCount === 1 ? 'payment' : 'payments'}
-                                                    </span>
-                                                </td>
-                                            </tr>
-                                        ))
-                                    )}
-                                </tbody>
-                                {billSummary.length > 0 && (
-                                    <tfoot className="bg-gray-50 border-t border-gray-200">
-                                        <tr>
-                                            <td colSpan="3" className="px-4 py-3 text-right font-bold text-gray-900">Total:</td>
-                                            <td className="px-4 py-3 text-right font-bold text-gray-900">
-                                                {formatCurrency(billSummary.reduce((sum, b) => sum + (b.billTotal || 0), 0))}
-                                            </td>
-                                            <td className="px-4 py-3 text-right font-bold text-green-600">
-                                                {formatCurrency(billSummary.reduce((sum, b) => sum + b.totalCash, 0))}
-                                            </td>
-                                            <td className="px-4 py-3 text-right font-bold text-blue-600">
-                                                {formatCurrency(billSummary.reduce((sum, b) => sum + b.totalUpi, 0))}
-                                            </td>
-                                            <td className="px-4 py-3 text-right font-bold text-gray-900">
-                                                {formatCurrency(billSummary.reduce((sum, b) => sum + b.totalPaid, 0))}
-                                            </td>
-                                            <td className="px-4 py-3 text-right font-bold text-red-600">
-                                                {formatCurrency(billSummary.reduce((sum, b) => sum + ((b.billTotal || 0) - b.totalPaid), 0))}
-                                            </td>
-                                            <td className="px-4 py-3 text-center font-bold text-gray-900">
-                                                {billSummary.reduce((sum, b) => sum + b.paymentCount, 0)}
-                                            </td>
+                                            <td className="px-4 py-3"></td>
                                         </tr>
                                     </tfoot>
                                 )}

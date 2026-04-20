@@ -11,7 +11,8 @@ const billRoutes = require('./routes/billRoutes');
 const customerRoutes = require('./routes/customerRoutes');
 const companyRoutes = require('./routes/companyRoutes');
 const authRoutes = require('./routes/authRoutes');
-const userRoutes = require('./routes/userRoutes'); // ✅ ADD USER ROUTES
+const userRoutes = require('./routes/userRoutes');
+const expenseMasterRoutes = require('./routes/expenseMasterRoutes'); // ✅ ADD EXPENSE MASTER ROUTES
 
 const app = express();
 app.use(cors());
@@ -27,7 +28,8 @@ app.use("/products", productRoutes);
 app.use('/reports', require('./routes/reportRoutes'));
 app.use('/companies', companyRoutes);
 app.use('/admin', authRoutes);
-app.use('/users', userRoutes); // ✅ ADD USER ROUTES - User management
+app.use('/users', userRoutes);
+app.use('/expense-master', expenseMasterRoutes); // ✅ ADD EXPENSE MASTER ROUTES
 
 // Connect MongoDB
 mongoose.connect(process.env.MONGO_URI)
@@ -87,10 +89,13 @@ app.get('/bills/customers', async (req, res) => {
 const paymentReportRoutes = require('./routes/paymentReportRoutes');
 app.use('/payment-reports', paymentReportRoutes);
 
+
+const expenseTransactionRoutes = require('./routes/expenseTransactionRoutes');
+app.use('/expense-transactions', expenseTransactionRoutes);
+
 // Server start
 const PORT = process.env.PORT || 5000;
 
 app.listen(PORT, "0.0.0.0", () => {
   console.log(`Server running on port ${PORT}`);
-
 });

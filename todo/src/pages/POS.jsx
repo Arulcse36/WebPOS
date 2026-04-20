@@ -10,6 +10,11 @@ import { handlePrintBill } from '../utils/printBill';
 
 const API = `${import.meta.env.VITE_API_URL}`;
 
+// Helper function to get display name (English name only)
+const getDisplayName = (product) => {
+  return product.name || "";
+};
+
 // --- Sub-Components ---
 const ProductCard = React.memo(({ product, onAdd, onUpdateQty, cartQuantity }) => {
   const [showQtyModal, setShowQtyModal] = useState(false);
@@ -18,6 +23,7 @@ const ProductCard = React.memo(({ product, onAdd, onUpdateQty, cartQuantity }) =
   const categoryName = getSafeString(product.category);
   const brandName = getSafeString(product.brand);
   const price = roundToTwoDecimals(product.retailRate);
+  const displayName = getDisplayName(product);
 
   const stock = product.stock !== undefined ? product.stock : Infinity;
   const quantityOptions = [0.05, 0.10, 0.15, 0.20, 0.25, 0.50, 0.75];
@@ -54,7 +60,14 @@ const ProductCard = React.memo(({ product, onAdd, onUpdateQty, cartQuantity }) =
       <div className={`p-3 rounded-lg transition-all border ${isOutOfStock ? 'bg-gray-200 opacity-60 border-transparent' : 'bg-white shadow-sm hover:shadow-md border-gray-200 hover:border-blue-400'
         }`}>
         <div className="mb-2">
-          <div className="font-bold text-gray-900 text-sm leading-tight h-10 overflow-hidden">{product.name}</div>
+          <div className="font-bold text-gray-900 text-sm leading-tight min-h-10 overflow-hidden">
+            {displayName}
+          </div>
+          {product.name && product.name !== displayName && (
+            <div className="text-xs text-gray-500 mt-0.5 truncate">
+              {product.name}
+            </div>
+          )}
           <div className="text-base font-black text-blue-700 mt-1">{formatCurrency(price)}</div>
           <div className={`text-xs mt-1 font-bold ${product.stock <= 5 ? 'text-red-600' : 'text-gray-500'}`}>
             STOCK: {product.stock !== undefined ? product.stock : 'Unlimited'}
@@ -116,7 +129,10 @@ const ProductCard = React.memo(({ product, onAdd, onUpdateQty, cartQuantity }) =
             <div className="p-4 border-b flex justify-between items-center">
               <div>
                 <h3 className="font-bold text-lg text-gray-900">Select Quantity</h3>
-                <p className="text-xs text-gray-500 mt-1">{product.name}</p>
+                <p className="text-xs text-gray-500 mt-1">{displayName}</p>
+                {product.name && product.name !== displayName && (
+                  <p className="text-xs text-gray-400">{product.name}</p>
+                )}
               </div>
               <button
                 onClick={() => setShowQtyModal(false)}
@@ -292,20 +308,16 @@ const POS = () => {
 
   // ========== SCROLL TO TOP FIX ==========
   useEffect(() => {
-    // Immediate scroll to top
     window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
     
-    // Scroll main container to top
     if (mainContainerRef.current) {
       mainContainerRef.current.scrollTop = 0;
     }
     
-    // Scroll products container to top
     if (productsContainerRef.current) {
       productsContainerRef.current.scrollTop = 0;
     }
     
-    // Scroll any other scrollable elements
     const scrollableElements = document.querySelectorAll(
       '.overflow-y-auto, .overflow-auto, .flex-1.overflow-y-auto'
     );
@@ -313,7 +325,6 @@ const POS = () => {
       element.scrollTop = 0;
     });
     
-    // Small delay to ensure DOM is fully rendered
     const timer = setTimeout(() => {
       window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
       if (productsContainerRef.current) {
@@ -322,7 +333,7 @@ const POS = () => {
     }, 100);
     
     return () => clearTimeout(timer);
-  }, []); // Runs once on component mount
+  }, []);
 
   // Also scroll when billId changes (when editing a bill)
   useEffect(() => {
@@ -350,29 +361,34 @@ const POS = () => {
     }
   }, [billDate]);
 
-  // Load bill data if in edit mode
+  // ========== FETCH PRODUCT DETAILS FROM PRODUCT MODEL ==========
+  const fetchProductDetails = useCallback(async (productId) => {
+    if (!productId) return null;
+    try {
+      const response = await axios.get(`${API}/products/${productId}`, {
+        params: { companyId: companyId }
+      });
+      return response.data;
+    } catch (error) {
+      console.error(`Error fetching product ${productId}:`, error);
+      return null;
+    }
+  }, [companyId]);
+
+  // Load bill data if in edit mode - Fetch fresh product names from product model
   useEffect(() => {
     const loadBillForEdit = async () => {
       if (billId) {
         setIsEditMode(true);
         try {
-          // ✅ FIX: Add companyId as query parameter
           const response = await axios.get(`${API}/bills/${billId}`, {
             params: { companyId: companyId }
           });
           const bill = response.data;
 
+          console.log("Loaded bill for edit:", bill);
+          
           setBillNumber(bill.billNumber || bill.id || "N/A");
-
-          const cartItems = bill.items.map(item => ({
-            product: item.productId,
-            name: item.name || item.productName,
-            price: roundToTwoDecimals(item.price),
-            qty: item.quantity,
-            total: roundToTwoDecimals(item.quantity * item.price)
-          }));
-
-          setCart(cartItems);
           setDiscount(bill.discount || 0);
           setPaymentMethod(bill.paymentMethod || "cash");
 
@@ -395,6 +411,54 @@ const POS = () => {
               address: bill.customerAddress
             });
           }
+
+          // Fetch fresh product data for each item from product model
+          const cartItemsWithFreshNames = [];
+          
+          for (const item of (bill.items || [])) {
+            try {
+              // Fetch fresh product details from product model
+              const freshProduct = await fetchProductDetails(item.productId);
+              
+              if (freshProduct) {
+                // Use fresh product name from product model
+                cartItemsWithFreshNames.push({
+                  product: item.productId,
+                  name: freshProduct.name || "Product",
+                  tamilName: freshProduct.tamilName || "",
+                  price: roundToTwoDecimals(item.price),
+                  qty: item.quantity,
+                  total: roundToTwoDecimals(item.quantity * item.price)
+                });
+                console.log(`Fetched fresh product name for ${item.productId}: ${freshProduct.name}`);
+              } else {
+                // Fallback to stored name if product not found
+                cartItemsWithFreshNames.push({
+                  product: item.productId,
+                  name: item.productName || item.name || "Product",
+                  tamilName: item.tamilName || "",
+                  price: roundToTwoDecimals(item.price),
+                  qty: item.quantity,
+                  total: roundToTwoDecimals(item.quantity * item.price)
+                });
+                console.warn(`Product not found for ID: ${item.productId}, using stored name`);
+              }
+            } catch (error) {
+              console.error(`Error processing item ${item.productId}:`, error);
+              cartItemsWithFreshNames.push({
+                product: item.productId,
+                name: item.productName || item.name || "Product",
+                tamilName: item.tamilName || "",
+                price: roundToTwoDecimals(item.price),
+                qty: item.quantity,
+                total: roundToTwoDecimals(item.quantity * item.price)
+              });
+            }
+          }
+          
+          console.log("Mapped cart items with fresh names:", cartItemsWithFreshNames);
+          setCart(cartItemsWithFreshNames);
+          
         } catch (error) {
           console.error("Error loading bill:", error);
           if (error.response) {
@@ -411,7 +475,7 @@ const POS = () => {
     if (companyId) {
       loadBillForEdit();
     }
-  }, [billId, navigate, companyId]);
+  }, [billId, navigate, companyId, fetchProductDetails]);
 
   // Reset date when cart opens for new bill
   useEffect(() => {
@@ -540,7 +604,6 @@ const POS = () => {
     setLoading(true);
     try {
       const res = await axios.get(`${API}/products?companyId=${companyId}`, { timeout: 8000 });
-      // Filter to ensure only active products are stored
       const activeProducts = res.data.filter(product => product.isActive === true);
       setProducts(activeProducts);
     } catch (error) {
@@ -635,12 +698,18 @@ const POS = () => {
           return;
         }
 
+        // Fetch fresh product details from product model
+        const freshProduct = await fetchProductDetails(product._id);
+        const productName = freshProduct?.name || product.name || "Product";
+        const productTamilName = freshProduct?.tamilName || product.tamilName || "";
         const price = roundToTwoDecimals(product.retailRate);
+        const displayName = productName;
+        
         setCart(prev => {
           const existing = prev.find(i => i.product === product._id);
           if (existing) {
             if (existing.qty >= product.stock) {
-              alert(`Cannot add more ${product.name}. Only ${product.stock} in stock.`);
+              alert(`Cannot add more ${displayName}. Only ${product.stock} in stock.`);
               return prev;
             }
             const newQty = existing.qty + 1;
@@ -649,7 +718,8 @@ const POS = () => {
           }
           return [...prev, {
             product: product._id,
-            name: product.name,
+            name: productName, // Fresh name from product model
+            tamilName: productTamilName,
             price: price,
             qty: 1,
             total: price
@@ -661,12 +731,11 @@ const POS = () => {
         alert(`Product "${searchTerm}" not found.`);
       }
     }
-  }, [search, products]);
+  }, [search, products, fetchProductDetails]);
 
   // ✅ UPDATED: Only show active products in filtered results
   const filteredProducts = useMemo(() =>
     products.filter(p => {
-      // Only include active products
       if (p.isActive !== true) return false;
       
       const matchesSearch = p.name.toLowerCase().includes(debouncedSearch.toLowerCase());
@@ -725,21 +794,26 @@ const POS = () => {
     }));
   }, [removeItem]);
 
-  const handleAddToCart = useCallback((product) => {
-    // Only allow adding if product is active
+  // Updated handleAddToCart to fetch fresh product name
+  const handleAddToCart = useCallback(async (product) => {
     if (product.isActive !== true) {
       alert(`${product.name} is not available for sale.`);
       return;
     }
     
+    // Fetch fresh product details from product model
+    const freshProduct = await fetchProductDetails(product._id);
+    const productName = freshProduct?.name || product.name || "Product";
+    const productTamilName = freshProduct?.tamilName || product.tamilName || "";
     const price = roundToTwoDecimals(product.retailRate);
     const incrementValue = 1;
+    const displayName = productName;
 
     setCart(prev => {
       const existing = prev.find(i => i.product === product._id);
       if (existing) {
         if (existing.qty >= product.stock) {
-          alert(`Cannot add more ${product.name}. Only ${product.stock} in stock.`);
+          alert(`Cannot add more ${displayName}. Only ${product.stock} in stock.`);
           return prev;
         }
         const newQty = roundToTwoDecimals(existing.qty + incrementValue);
@@ -752,13 +826,14 @@ const POS = () => {
       }
       return [...prev, {
         product: product._id,
-        name: product.name,
+        name: productName, // Fresh name from product model
+        tamilName: productTamilName,
         price: price,
         qty: incrementValue,
         total: roundToTwoDecimals(price * incrementValue)
       }];
     });
-  }, []);
+  }, [fetchProductDetails]);
 
   const incrementDiscount = useCallback(() => {
     setDiscount(prev => Math.min(100, prev + 5));
@@ -845,6 +920,7 @@ const POS = () => {
         items: cart.map(i => ({
           productId: i.product,
           productName: i.name,
+          tamilName: i.tamilName || "",
           quantity: i.qty,
           price: roundToTwoDecimals(i.price)
         })),
@@ -867,7 +943,6 @@ const POS = () => {
 
       let res;
       if (isEditMode && billId) {
-        // ✅ FIX: Add companyId as query parameter for update
         res = await axios.put(`${API}/bills/${billId}`, payload, {
           params: { companyId: companyId }
         });
@@ -876,33 +951,15 @@ const POS = () => {
       }
 
       if (res.data.success) {
-        // Build the bill object for printing from the saved response
         const savedBill = res.data.bill || res.data.data || {};
-
-        const billForPrint = {
-          billNumber: savedBill.billNumber || billNumber,
-          date: new Date(billDate).toISOString(),
-          customer: selectedCustomer?.name || "Walk-in Customer",
-          customerPhone: selectedCustomer?.phone || "",
-          items: cart.map(i => ({
-            name: i.name,
-            productName: i.name,
-            quantity: i.qty,
-            price: roundToTwoDecimals(i.price),
-          })),
-          discount: roundToTwoDecimals(discount),
-          discountAmount: roundToTwoDecimals(discountAmount),
-          subtotal: cart.reduce((sum, i) => sum + i.price * i.qty, 0),
-          total: total,
-          paymentMethod: finalPaymentMethod,
-          paid: finalPaidAmount,
-          due: finalDueAmount,
-          paidOriginal: finalPaidAmount
-
-        };
-
-        // 🖨️ Trigger print preview after successful save/update
-        handlePrintBill(billForPrint);
+        const savedBillId = savedBill._id || savedBill.id;
+        
+        if (savedBillId) {
+          console.log("Printing bill with ID:", savedBillId);
+          handlePrintBill(savedBillId);
+        } else {
+          console.warn("No bill ID returned from server, cannot print");
+        }
 
         let message = isEditMode ? `Bill Updated Successfully!\n` : `Transaction Successful!\n`;
         if (isEditMode) {
@@ -1105,6 +1162,11 @@ const POS = () => {
     });
     return counts;
   }, [products]);
+
+  // Helper to get display name for cart items - ALWAYS use English name
+  const getCartDisplayName = useCallback((item) => {
+    return item.name || "";
+  }, []);
 
   // Show loading or redirect if no company
   if (!companyId) {
@@ -1319,7 +1381,7 @@ const POS = () => {
           >
             <div className="p-4 border-b">
               <h3 className="text-lg font-bold text-gray-900">Edit Item Price</h3>
-              <p className="text-sm text-gray-600 mt-1">{selectedEditItem.name}</p>
+              <p className="text-sm text-gray-600 mt-1">{selectedEditItem?.name || "Unknown Item"}</p>
             </div>
 
             <div className="p-4 space-y-4">
@@ -1671,7 +1733,10 @@ const POS = () => {
               cart.map(item => (
                 <div key={`cart-${item.product}`} className="bg-gray-50 rounded-lg p-3 border border-gray-200">
                   <div className="flex justify-between items-start mb-1">
-                    <h3 className="text-sm font-bold text-black leading-tight flex-1 pr-2">{item.name}</h3>
+                    {/* Always show English name only */}
+                    <h3 className="text-sm font-bold text-black leading-tight flex-1 pr-2">
+                      {item.name || "Unknown Item"}
+                    </h3>
                     <button
                       onClick={() => removeItem(item.product)}
                       className="text-red-500 font-bold text-sm hover:text-red-700 flex-shrink-0 ml-2"
@@ -1681,7 +1746,9 @@ const POS = () => {
                   </div>
                   <div className="flex justify-between items-end mt-2">
                     <div className="flex items-center gap-2">
-                      <span className="bg-blue-600 text-white font-bold px-2 py-0.5 rounded text-xs">x{formatQuantityDisplay(item.qty)}</span>
+                      <span className="bg-blue-600 text-white font-bold px-2 py-0.5 rounded text-xs">
+                        x{formatQuantityDisplay(item.qty)}
+                      </span>
                       <button
                         onClick={() => handleEditPrice(item)}
                         className="text-gray-600 text-xs hover:text-blue-600 hover:underline flex items-center gap-1"
@@ -1690,7 +1757,9 @@ const POS = () => {
                         <span className="text-blue-500 text-[10px]">✎</span>
                       </button>
                     </div>
-                    <div className="text-base font-bold text-black">{formatCurrency(item.total)}</div>
+                    <div className="text-base font-bold text-black">
+                      {formatCurrency(item.total)}
+                    </div>
                   </div>
                 </div>
               ))

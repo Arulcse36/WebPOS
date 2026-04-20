@@ -25,61 +25,6 @@ const StatusBadge = ({ bill }) => {
 };
 
 // ══════════════════════════════════════════════════════════════════════════════
-// TODAY'S COLLECTION SUMMARY CARD (Vibrant colors with different backgrounds)
-// ══════════════════════════════════════════════════════════════════════════════
-const TodayCollectionCard = ({ collection }) => {
-  const cashPercentage = collection.total > 0 ? (collection.cash / collection.total) * 100 : 0;
-  const upiPercentage = collection.total > 0 ? (collection.upi / collection.total) * 100 : 0;
-  
-  return (
-    <div className="mb-6">
-      {/* Three column layout with different colors */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        {/* Total Card - Purple Gradient */}
-        <div className="bg-gradient-to-br from-purple-500 to-indigo-600 rounded-2xl shadow-lg p-5 text-white">
-          <div className="flex justify-between items-start mb-3">
-            <span className="text-purple-100 text-sm font-medium">Today Total Collection</span>
-            <Wallet className="w-5 h-5 text-purple-200" />
-          </div>
-          <p className="text-3xl font-bold mb-1">{fmt(collection.total)}</p>
-          <p className="text-purple-200 text-xs">{collection.billCount} bills</p>
-        </div>
-        
-        {/* Cash Card - Green Gradient */}
-        <div className="bg-gradient-to-br from-green-500 to-emerald-600 rounded-2xl shadow-lg p-5 text-white">
-          <div className="flex justify-between items-start mb-3">
-            <span className="text-green-100 text-sm font-medium">Today Cash Collection</span>
-            <Banknote className="w-5 h-5 text-green-200" />
-          </div>
-          <p className="text-3xl font-bold mb-1">{fmt(collection.cash)}</p>
-          <div className="flex justify-between items-center">
-            <span className="text-green-200 text-xs">{cashPercentage.toFixed(1)}% of total</span>
-            <div className="w-16 bg-green-400/30 rounded-full h-1.5">
-              <div className="bg-white rounded-full h-1.5" style={{ width: `${cashPercentage}%` }} />
-            </div>
-          </div>
-        </div>
-        
-        {/* UPI Card - Blue Gradient */}
-        <div className="bg-gradient-to-br from-blue-500 to-cyan-600 rounded-2xl shadow-lg p-5 text-white">
-          <div className="flex justify-between items-start mb-3">
-            <span className="text-blue-100 text-sm font-medium">Today UPI Collection</span>
-            <Smartphone className="w-5 h-5 text-blue-200" />
-          </div>
-          <p className="text-3xl font-bold mb-1">{fmt(collection.upi)}</p>
-          <div className="flex justify-between items-center">
-            <span className="text-blue-200 text-xs">{upiPercentage.toFixed(1)}% of total</span>
-            <div className="w-16 bg-blue-400/30 rounded-full h-1.5">
-              <div className="bg-white rounded-full h-1.5" style={{ width: `${upiPercentage}%` }} />
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-};
-
-// ══════════════════════════════════════════════════════════════════════════════
 // MAIN DASHBOARD
 // ══════════════════════════════════════════════════════════════════════════════
 const Dashboard = () => {
@@ -91,7 +36,6 @@ const Dashboard = () => {
   const [summary, setSummary] = useState({ grandTotal: 0, totalPaid: 0, totalDue: 0 });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
-  const [todayCollection, setTodayCollection] = useState({ cash: 0, upi: 0, total: 0, billCount: 0 });
   const [stats, setStats] = useState({
     totalBills: 0, averageBillValue: 0, collectionRate: 0,
     topCustomers: [], allTopProducts: [], paymentMethodBreakdown: [],
@@ -113,27 +57,6 @@ const Dashboard = () => {
       setTo(today);
     }
   }, [period]);
-
-  const fetchTodayCollection = async () => {
-    if (!companyId) return;
-    try {
-      const res = await axios.get(
-        `${API}/reports/today-collection-detailed?companyId=${companyId}`,
-        { timeout: 12000 }
-      );
-      if (res.data.success) {
-        const sm = res.data.summary;
-        setTodayCollection({
-          cash: sm.totalCash || 0,
-          upi: sm.totalUpi || 0,
-          total: sm.totalCollected || 0,
-          billCount: sm.totalBills || 0,
-        });
-      }
-    } catch (err) {
-      console.error("Collection fetch failed:", err);
-    }
-  };
 
   const fetchDashboardAnalytics = async () => {
     setLoading(true);
@@ -229,7 +152,6 @@ const Dashboard = () => {
 
   useEffect(() => {
     if (companyId || isSuperAdmin) {
-      fetchTodayCollection();
       fetchDashboardAnalytics();
       fetchAdditionalStats();
     }
@@ -295,9 +217,6 @@ const Dashboard = () => {
           </div>
         ) : (
           <>
-            {/* Today's Collection Cards with different colors */}
-            <TodayCollectionCard collection={todayCollection} />
-
             {/* Growth */}
             <div className="mb-6 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl p-4 border border-blue-100">
               <div className="flex items-center justify-between">

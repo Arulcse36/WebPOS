@@ -36,6 +36,9 @@ const Reports = () => {
   const [customers, setCustomers] = useState([]);
   const [loadingCustomers, setLoadingCustomers] = useState(false);
   
+  // Due status filter states
+  const [dueStatusFilter, setDueStatusFilter] = useState("all"); // "all", "due", "no_due"
+  
   // Payment modal states
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [selectedBill, setSelectedBill] = useState(null);
@@ -50,12 +53,17 @@ const Reports = () => {
   const [selectedBillForHistory, setSelectedBillForHistory] = useState(null);
   const [loadingHistory, setLoadingHistory] = useState(false);
   const [deletingPayment, setDeletingPayment] = useState(false);
+  
+  // Filter panel collapsed state
+  const [filtersExpanded, setFiltersExpanded] = useState(true);
 
   // ✅ Set default dates when switching to custom
   useEffect(() => {
     if (type === "custom") {
       const today = new Date().toISOString().split("T")[0];
-      setFrom(today);
+      const lastWeek = new Date();
+      lastWeek.setDate(lastWeek.getDate() - 7);
+      setFrom(lastWeek.toISOString().split("T")[0]);
       setTo(today);
     }
   }, [type]);
@@ -101,7 +109,13 @@ const Reports = () => {
     try {
       let url = `${API}/reports/bills?type=${type}&companyId=${companyId}`;
 
-      if (type === "custom") {
+      // Handle different period types
+      if (type === "all") {
+        // For "All" - fetch from year 2000 to current date
+        const startDate = new Date("2000-01-01");
+        const endDate = new Date();
+        url += `&from=${startDate.toISOString().split('T')[0]}&to=${endDate.toISOString().split('T')[0]}`;
+      } else if (type === "custom") {
         if (!from || !to) {
           alert("Please select date range");
           setLoading(false);
@@ -109,6 +123,7 @@ const Reports = () => {
         }
         url += `&from=${from}&to=${to}`;
       }
+      // For daily, weekly, monthly - no additional date params needed as backend handles them
 
       // Add customer filter if selected
       if (customerFilter) {
@@ -127,14 +142,7 @@ const Reports = () => {
       console.log("Response received:", res.data);
       
       // Format amounts to 2 decimal places
-      const formattedSummary = {
-        grandTotal: roundToTwoDecimals(res.data.summary?.grandTotal || 0),
-        totalPaid: roundToTwoDecimals(res.data.summary?.totalPaid || 0),
-        totalDue: roundToTwoDecimals(res.data.summary?.totalDue || 0)
-      };
-      
-      // Ensure each bill has an ID and formatted amounts
-      const billsWithIds = (res.data.bills || []).map(bill => {
+      let filteredBills = (res.data.bills || []).map(bill => {
         return {
           ...bill,
           _id: bill._id || bill.id || bill.billId,
@@ -147,8 +155,22 @@ const Reports = () => {
         };
       });
       
-      setBills(billsWithIds);
-      setSummary(formattedSummary);
+      // ✅ Apply due status filter
+      if (dueStatusFilter === "due") {
+        filteredBills = filteredBills.filter(bill => bill.due > 0);
+      } else if (dueStatusFilter === "no_due") {
+        filteredBills = filteredBills.filter(bill => bill.due <= 0);
+      }
+      
+      // Calculate summary based on filtered bills
+      const filteredSummary = {
+        grandTotal: roundToTwoDecimals(filteredBills.reduce((sum, bill) => sum + bill.total, 0)),
+        totalPaid: roundToTwoDecimals(filteredBills.reduce((sum, bill) => sum + bill.paid, 0)),
+        totalDue: roundToTwoDecimals(filteredBills.reduce((sum, bill) => sum + bill.due, 0))
+      };
+      
+      setBills(filteredBills);
+      setSummary(filteredSummary);
     } catch (err) {
       console.error("Fetch error:", err);
       
@@ -177,7 +199,7 @@ const Reports = () => {
     if (companyId) {
       fetchReport();
     }
-  }, [type, from, to, customerFilter, companyId]);
+  }, [type, from, to, customerFilter, dueStatusFilter, companyId]);
 
   // ✅ Redirect if no company
   useEffect(() => {
@@ -214,6 +236,19 @@ const Reports = () => {
     
     navigate(`/pos/edit/${billId}`);
   };
+
+
+  // ✅ Handle edit bill for Retail POS (NEW)
+const handleEditBillRetail = (bill) => {
+  const billId = bill._id || bill.id || bill.billId;
+  
+  if (!billId) {
+    alert("Cannot edit this bill: No ID found. Please check the bill data.");
+    return;
+  }
+  
+  navigate(`/RetailPos/edit/${billId}`);
+};
 
   // ✅ Handle delete bill (only for admins)
   const handleDeleteBill = async (bill) => {
@@ -264,11 +299,23 @@ const Reports = () => {
     alert(message);
   };
 
-  // ✅ Handle print bill - Using the imported handlePrintBill
-  const handlePrintBillWeb = (bill) => {
-    handlePrintBill(bill);
-  };
-
+// ✅ Handle print bill - Using the imported handlePrintBill
+const handlePrintBillWeb = (bill) => {
+  // Get the bill ID - this is the MongoDB _id
+  const billId = bill._id || bill.id || bill.billId;
+  
+  if (!billId) {
+    alert("Cannot print this bill: No ID found. Please check the bill data.");
+    console.error("No bill ID found for bill:", bill);
+    return;
+  }
+  
+  console.log("Printing bill with ID:", billId);
+  
+  // Call handlePrintBill with just the billId
+  // The onClose callback is optional
+  handlePrintBill(billId);
+};
   // ✅ Handle delete payment record (only for admins)
   const handleDeletePayment = async (paymentIndex) => {
     if (!canDelete) {
@@ -614,14 +661,27 @@ const Reports = () => {
     }
   };
 
-  // ✅ Clear customer filter
-  const clearCustomerFilter = () => {
+  // ✅ Clear all filters
+  const clearAllFilters = () => {
     setCustomerFilter("");
+    setDueStatusFilter("all");
+    setType("daily");
+    setFrom("");
+    setTo("");
   };
 
   // ✅ Retry fetch
   const handleRetry = () => {
     fetchReport();
+  };
+
+  // Get active filters count
+  const getActiveFiltersCount = () => {
+    let count = 0;
+    if (customerFilter) count++;
+    if (dueStatusFilter !== "all") count++;
+    if (type === "custom" && (from || to)) count++;
+    return count;
   };
 
   // Show loading or redirect if no company
@@ -640,229 +700,397 @@ const Reports = () => {
   }
 
   return (
-    <div className="p-4 bg-gray-50 min-h-screen">
+    <div className="p-4 bg-gradient-to-br from-gray-50 to-gray-100 min-h-screen">
       {/* HEADER */}
-      <h1 className="text-xl font-bold mb-4 text-gray-800">
-        📊 Sales Report
-      </h1>
+      <div className="mb-6">
+        <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
+          📊 Sales Report
+        </h1>
+        <p className="text-sm text-gray-500 mt-1">View and manage all your sales transactions</p>
+      </div>
 
       {/* Error Message */}
       {error && (
-        <div className="mb-4 p-3 bg-red-100 border border-red-400 text-red-700 rounded-lg">
+        <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-xl text-red-700">
           <p className="text-sm">{error}</p>
           <button 
             onClick={handleRetry}
-            className="mt-2 px-3 py-1 bg-red-600 text-white rounded text-xs hover:bg-red-700"
+            className="mt-2 px-3 py-1 bg-red-600 text-white rounded-lg text-xs hover:bg-red-700"
           >
             Retry
           </button>
         </div>
       )}
 
-      {/* FILTERS */}
-      <div className="space-y-3 mb-4">
-        {/* Date Type and Custom Date Row */}
-        <div className="flex flex-wrap gap-3 items-center">
-          <select
-            value={type}
-            onChange={(e) => setType(e.target.value)}
-            className="p-2 border rounded-lg text-sm bg-white text-gray-800 focus:ring-2 focus:ring-blue-500 outline-none"
-            disabled={loading}
-          >
-            <option value="daily">Daily</option>
-            <option value="weekly">Weekly</option>
-            <option value="monthly">Monthly</option>
-            <option value="custom">Custom</option>
-          </select>
-
-          {type === "custom" && (
-            <>
-              <input
-                type="date"
-                value={from}
-                onChange={(e) => setFrom(e.target.value)}
-                className="p-2 border rounded-lg bg-white text-gray-800"
-                disabled={loading}
-              />
-              <input
-                type="date"
-                value={to}
-                onChange={(e) => setTo(e.target.value)}
-                className="p-2 border rounded-lg bg-white text-gray-800"
-                disabled={loading}
-              />
-              <button
-                onClick={fetchReport}
-                disabled={loading}
-                className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 disabled:bg-gray-400"
-              >
-                {loading ? "Loading..." : "Apply"}
-              </button>
-            </>
-          )}
-        </div>
-
-        {/* Customer Filter Row */}
-        <div className="flex flex-wrap gap-3 items-center">
-          <div className="flex-1 min-w-[200px]">
-            <select
-              value={customerFilter}
-              onChange={(e) => setCustomerFilter(e.target.value)}
-              className="w-full p-2 border rounded-lg text-sm bg-white text-gray-800 focus:ring-2 focus:ring-blue-500 outline-none"
-              disabled={loading || loadingCustomers}
-            >
-              <option value="">All Customers</option>
-              {customers.map((customer, index) => (
-                <option key={index} value={customer}>
-                  {customer === "Walk-in" ? "🚶 Walk-in Customer" : `👤 ${customer}`}
-                </option>
-              ))}
-            </select>
+      {/* FILTERS SECTION - Improved Design */}
+      <div className="bg-white rounded-xl shadow-sm mb-6 overflow-hidden">
+        {/* Filter Header */}
+        <div 
+          className="px-4 py-3 bg-gradient-to-r from-blue-50 to-indigo-50 border-b border-gray-200 flex justify-between items-center cursor-pointer"
+          onClick={() => setFiltersExpanded(!filtersExpanded)}
+        >
+          <div className="flex items-center gap-2">
+            <span className="text-lg">🔍</span>
+            <span className="font-semibold text-gray-800">Filters</span>
+            {getActiveFiltersCount() > 0 && (
+              <span className="ml-2 bg-blue-500 text-white text-xs px-2 py-0.5 rounded-full">
+                {getActiveFiltersCount()} active
+              </span>
+            )}
           </div>
-          
-          {customerFilter && (
-            <button
-              onClick={clearCustomerFilter}
-              className="px-3 py-2 bg-gray-500 text-white rounded-lg hover:bg-gray-600 text-sm whitespace-nowrap"
-              disabled={loading}
-            >
-              Clear Filter
-            </button>
-          )}
-          
-          {loadingCustomers && (
-            <div className="text-sm text-gray-500">Loading customers...</div>
-          )}
+          <div className="flex items-center gap-2">
+            {getActiveFiltersCount() > 0 && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  clearAllFilters();
+                }}
+                className="text-xs text-red-600 hover:text-red-700 px-2 py-1 rounded hover:bg-red-50"
+              >
+                Clear All
+              </button>
+            )}
+            <span className="text-gray-400 text-xl">
+              {filtersExpanded ? '▲' : '▼'}
+            </span>
+          </div>
         </div>
 
-        {/* Active Filter Indicator */}
-        {customerFilter && (
-          <div className="flex items-center gap-2 text-sm">
-            <span className="text-gray-600">Active Filter:</span>
-            <span className="bg-blue-100 text-blue-800 px-2 py-1 rounded-full text-xs">
-              Customer: {customerFilter === "Walk-in" ? "Walk-in Customer" : customerFilter}
-            </span>
+        {/* Filter Content */}
+        {filtersExpanded && (
+          <div className="p-4 space-y-4">
+            {/* Row 1: Date Range */}
+            <div>
+              <label className="block text-xs font-semibold text-gray-600 mb-2 uppercase tracking-wide">
+                📅 Date Range
+              </label>
+              <div className="flex flex-wrap gap-3">
+                <select
+                  value={type}
+                  onChange={(e) => setType(e.target.value)}
+                  className="flex-1 min-w-[140px] px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white text-gray-800 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  disabled={loading}
+                >
+                  <option value="daily">📅 Today</option>
+                  <option value="weekly">📆 Last 7 Days</option>
+                  <option value="monthly">📊 This Month</option>
+                  <option value="all">🗓️ All Time (From 2000)</option>
+                  <option value="custom">⚙️ Custom Range</option>
+                </select>
+
+                {type === "custom" && (
+                  <div className="flex flex-wrap gap-2">
+                    <input
+                      type="date"
+                      value={from}
+                      onChange={(e) => setFrom(e.target.value)}
+                      className="px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white text-gray-800"
+                      disabled={loading}
+                    />
+                    <span className="text-gray-400 self-center">→</span>
+                    <input
+                      type="date"
+                      value={to}
+                      onChange={(e) => setTo(e.target.value)}
+                      className="px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white text-gray-800"
+                      disabled={loading}
+                    />
+                    <button
+                      onClick={fetchReport}
+                      disabled={loading}
+                      className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700 disabled:bg-gray-400 transition"
+                    >
+                      Apply
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Row 2: Customer Filter */}
+            <div>
+              <label className="block text-xs font-semibold text-gray-600 mb-2 uppercase tracking-wide">
+                👤 Customer
+              </label>
+              <div className="flex gap-2">
+                <select
+                  value={customerFilter}
+                  onChange={(e) => setCustomerFilter(e.target.value)}
+                  className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white text-gray-800 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  disabled={loading || loadingCustomers}
+                >
+                  <option value="">👥 All Customers</option>
+                  {customers.map((customer, index) => (
+                    <option key={index} value={customer}>
+                      {customer === "Walk-in" ? "🚶 Walk-in Customer" : `👤 ${customer}`}
+                    </option>
+                  ))}
+                </select>
+                {customerFilter && (
+                  <button
+                    onClick={() => setCustomerFilter("")}
+                    className="px-3 py-2 bg-gray-100 text-gray-600 rounded-lg hover:bg-gray-200 text-sm transition"
+                    title="Clear customer filter"
+                  >
+                    ✕
+                  </button>
+                )}
+              </div>
+              {loadingCustomers && (
+                <p className="text-xs text-gray-400 mt-1">Loading customers...</p>
+              )}
+            </div>
+
+            {/* Row 3: Payment Status Filter */}
+            <div>
+              <label className="block text-xs font-semibold text-gray-600 mb-2 uppercase tracking-wide">
+                💰 Payment Status
+              </label>
+              <div className="flex gap-2">
+                <div className="flex-1 grid grid-cols-3 gap-2">
+                  <button
+                    onClick={() => setDueStatusFilter("all")}
+                    className={`px-3 py-2 rounded-lg text-sm font-medium transition ${
+                      dueStatusFilter === "all"
+                        ? "bg-gray-800 text-white"
+                        : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                    }`}
+                  >
+                    📋 All
+                  </button>
+                  <button
+                    onClick={() => setDueStatusFilter("due")}
+                    className={`px-3 py-2 rounded-lg text-sm font-medium transition ${
+                      dueStatusFilter === "due"
+                        ? "bg-red-500 text-white"
+                        : "bg-red-50 text-red-700 hover:bg-red-100"
+                    }`}
+                  >
+                    ⚠️ Due
+                  </button>
+                  <button
+                    onClick={() => setDueStatusFilter("no_due")}
+                    className={`px-3 py-2 rounded-lg text-sm font-medium transition ${
+                      dueStatusFilter === "no_due"
+                        ? "bg-green-500 text-white"
+                        : "bg-green-50 text-green-700 hover:bg-green-100"
+                    }`}
+                  >
+                    ✅ Paid
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* Active Filters Tags */}
+            {(customerFilter || dueStatusFilter !== "all" || type === "all") && (
+              <div className="pt-2 border-t border-gray-100">
+                <div className="flex flex-wrap gap-2">
+                  {type === "all" && (
+                    <span className="inline-flex items-center gap-1 px-2 py-1 bg-purple-100 text-purple-700 rounded-full text-xs">
+                      <span>🗓️</span> All Records
+                    </span>
+                  )}
+                  {customerFilter && (
+                    <span className="inline-flex items-center gap-1 px-2 py-1 bg-blue-100 text-blue-700 rounded-full text-xs">
+                      <span>👤</span> {customerFilter === "Walk-in" ? "Walk-in" : customerFilter}
+                      <button
+                        onClick={() => setCustomerFilter("")}
+                        className="ml-1 hover:text-blue-900"
+                      >
+                        ×
+                      </button>
+                    </span>
+                  )}
+                  {dueStatusFilter === "due" && (
+                    <span className="inline-flex items-center gap-1 px-2 py-1 bg-red-100 text-red-700 rounded-full text-xs">
+                      <span>⚠️</span> Due Only
+                    </span>
+                  )}
+                  {dueStatusFilter === "no_due" && (
+                    <span className="inline-flex items-center gap-1 px-2 py-1 bg-green-100 text-green-700 rounded-full text-xs">
+                      <span>✅</span> Paid Only
+                    </span>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
         )}
       </div>
 
       {/* Loading Indicator */}
       {loading && (
-        <div className="text-center py-8">
-          <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
-          <p className="mt-2 text-gray-500">Loading report...</p>
+        <div className="text-center py-12">
+          <div className="inline-block animate-spin rounded-full h-10 w-10 border-4 border-blue-200 border-t-blue-600"></div>
+          <p className="mt-3 text-gray-500 text-sm">Loading report...</p>
         </div>
       )}
 
-      {/* SUMMARY CARDS */}
+      {/* SUMMARY CARDS - Improved Design */}
       {!loading && !error && (
         <>
-          <div className="grid grid-cols-2 md:grid-cols-3 gap-3 mb-4">
-            <Card title="Total Sales" value={summary.grandTotal} color="blue" />
-            <Card title="Total Paid" value={summary.totalPaid} color="green" />
-            <Card title="Total Due" value={summary.totalDue} color="orange" />
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
+            <div className="bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl p-4 text-white shadow-lg">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-blue-100 text-xs uppercase tracking-wide">Total Sales</p>
+                  <p className="text-2xl font-bold mt-1">{formatCurrency(summary.grandTotal)}</p>
+                </div>
+                <div className="w-10 h-10 bg-white/20 rounded-lg flex items-center justify-center">
+                  <span className="text-xl">💰</span>
+                </div>
+              </div>
+            </div>
+            
+            <div className="bg-gradient-to-br from-green-500 to-green-600 rounded-xl p-4 text-white shadow-lg">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-green-100 text-xs uppercase tracking-wide">Total Received</p>
+                  <p className="text-2xl font-bold mt-1">{formatCurrency(summary.totalPaid)}</p>
+                </div>
+                <div className="w-10 h-10 bg-white/20 rounded-lg flex items-center justify-center">
+                  <span className="text-xl">💳</span>
+                </div>
+              </div>
+            </div>
+            
+            <div className="bg-gradient-to-br from-orange-500 to-orange-600 rounded-xl p-4 text-white shadow-lg">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-orange-100 text-xs uppercase tracking-wide">Pending Amount</p>
+                  <p className="text-2xl font-bold mt-1">{formatCurrency(summary.totalDue)}</p>
+                </div>
+                <div className="w-10 h-10 bg-white/20 rounded-lg flex items-center justify-center">
+                  <span className="text-xl">⏳</span>
+                </div>
+              </div>
+            </div>
           </div>
 
-          {/* TABLE */}
-          <div className="bg-white rounded-lg shadow overflow-x-auto">
-            <table className="w-full text-sm text-gray-800">
-              <thead className="bg-gray-200 text-gray-800">
-                <tr>
-                  <th className="p-2 text-left">Bill No</th>
-                  <th className="p-2 text-left">Date</th>
-                  <th className="p-2 text-left">Customer</th>
-                  <th className="p-2 text-right">Bill Amount</th>
-                  <th className="p-2 text-right">Total Paid</th>
-                  <th className="p-2 text-right">Total Due</th>
-                  <th className="p-2 text-center">Payment</th>
-                  <th className="p-2 text-center">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {bills.length > 0 ? (
-                  bills.map((bill, index) => (
-                    <tr key={bill._id || bill.id || index} className="border-b hover:bg-gray-50">
-                      <td className="p-2 font-semibold">
-                        {bill.billNumber}
-                      </td>
-                      <td className="p-2">
-                        {formatDate(bill.date)}
-                      </td>
-                      <td className="p-2">
-                        {bill.customer || "Walk-in"}
-                      </td>
-                      <td className="p-2 text-right text-blue-600 font-bold">
-                        {formatCurrency(bill.total)}
-                      </td>
-                      <td className="p-2 text-right text-green-600">
-                        {formatCurrency(bill.paid)}
-                      </td>
-                      <td className={`p-2 text-right ${bill.due > 0 ? 'text-red-600 font-bold' : 'text-gray-500'}`}>
-                        {formatCurrency(bill.due)}
-                      </td>
-                      <td className="p-2 text-center capitalize">
-                        {bill.paymentMethod}
-                      </td>
-                      <td className="p-2 text-center">
-                        <div className="flex flex-wrap gap-1 justify-center">
-                          <button
-                            onClick={() => handleEditBill(bill)}
-                            className="bg-blue-500 text-white px-2 py-1 rounded text-xs hover:bg-blue-600"
-                            title="Edit Bill"
-                          >
-                            ✏️
-                          </button>
-                          <button
-                            onClick={() => fetchPaymentHistory(bill)}
-                            className="bg-indigo-500 text-white px-2 py-1 rounded text-xs hover:bg-indigo-600"
-                            title="View Payment History"
-                          >
-                            📜
-                          </button>
-                          {bill.due > 0 && (
-                            <button
-                              onClick={() => handlePayDue(bill)}
-                              className="bg-yellow-500 text-white px-2 py-1 rounded text-xs hover:bg-yellow-600"
-                              title="Pay Due"
-                            >
-                              💰
-                            </button>
-                          )}
-                          <button
-                            onClick={() => handlePrintBillWeb(bill)}
-                            className="bg-purple-500 text-white px-2 py-1 rounded text-xs hover:bg-purple-600"
-                            title="Print Bill"
-                          >
-                            🖨️
-                          </button>
-                          {/* Delete button - Only show for admins */}
-                          {canDelete && (
-                            <button
-                              onClick={() => handleDeleteBill(bill)}
-                              className="bg-red-500 text-white px-2 py-1 rounded text-xs hover:bg-red-600"
-                              title="Delete Bill"
-                            >
-                              🗑️
-                            </button>
-                          )}
-                        </div>
+          {/* BILLS COUNT BAR */}
+          <div className="bg-white rounded-xl shadow-sm p-3 mb-6 flex justify-between items-center">
+            <div className="flex items-center gap-2">
+              <span className="text-gray-500 text-sm">📋 Total Bills:</span>
+              <span className="font-bold text-gray-800 text-lg">{bills.length}</span>
+            </div>
+            {bills.length > 0 && (
+              <div className="text-xs text-gray-400">
+                Showing {bills.length} record{bills.length !== 1 ? 's' : ''}
+              </div>
+            )}
+          </div>
+
+          {/* TABLE - Improved Design */}
+          <div className="bg-white rounded-xl shadow-sm overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="bg-gray-50 border-b border-gray-200">
+                  <tr>
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600">Bill No</th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600">Date</th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600">Customer</th>
+                    <th className="px-4 py-3 text-right text-xs font-semibold text-gray-600">Amount</th>
+                    <th className="px-4 py-3 text-right text-xs font-semibold text-gray-600">Paid</th>
+                    <th className="px-4 py-3 text-right text-xs font-semibold text-gray-600">Due</th>
+                    <th className="px-4 py-3 text-center text-xs font-semibold text-gray-600">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {bills.length > 0 ? (
+                    bills.map((bill, index) => (
+                      <tr key={bill._id || bill.id || index} className="hover:bg-gray-50 transition-colors">
+                        <td className="px-4 py-3 font-semibold text-gray-900">
+                          #{bill.billNumber}
+                        </td>
+                        <td className="px-4 py-3 text-gray-600">
+                          {formatDate(bill.date)}
+                        </td>
+                        <td className="px-4 py-3 text-gray-700">
+                          {bill.customer || "Walk-in"}
+                        </td>
+                        <td className="px-4 py-3 text-right font-semibold text-blue-600">
+                          {formatCurrency(bill.total)}
+                        </td>
+                        <td className="px-4 py-3 text-right font-semibold text-green-600">
+                          {formatCurrency(bill.paid)}
+                        </td>
+                        <td className={`px-4 py-3 text-right font-semibold ${bill.due > 0 ? 'text-red-600' : 'text-gray-500'}`}>
+                          {formatCurrency(bill.due)}
+                        </td>
+<td className="px-4 py-3 text-center">
+  <div className="flex flex-wrap gap-1 justify-center">
+    {/* Edit Button - Regular POS */}
+    <button
+      onClick={() => handleEditBill(bill)}
+      className="p-1.5 bg-blue-100 text-blue-600 rounded hover:bg-blue-200 transition"
+      title="Edit in POS"
+    >
+      ✏️ POS
+    </button>
+    
+    {/* Edit Button - Retail POS (NEW) */}
+    <button
+      onClick={() => handleEditBillRetail(bill)}
+      className="p-1.5 bg-indigo-100 text-indigo-600 rounded hover:bg-indigo-200 transition"
+      title="Edit in Retail POS"
+    >
+      🛍️ Retail
+    </button>
+    
+    <button
+      onClick={() => fetchPaymentHistory(bill)}
+      className="p-1.5 bg-indigo-100 text-indigo-600 rounded hover:bg-indigo-200 transition"
+      title="Payment History"
+    >
+      📜
+    </button>
+    {bill.due > 0 && (
+      <button
+        onClick={() => handlePayDue(bill)}
+        className="p-1.5 bg-yellow-100 text-yellow-700 rounded hover:bg-yellow-200 transition"
+        title="Pay Due"
+      >
+        💰
+      </button>
+    )}
+    <button
+      onClick={() => handlePrintBillWeb(bill)}
+      className="p-1.5 bg-purple-100 text-purple-600 rounded hover:bg-purple-200 transition"
+      title="Print Bill"
+    >
+      🖨️
+    </button>
+    {canDelete && (
+      <button
+        onClick={() => handleDeleteBill(bill)}
+        className="p-1.5 bg-red-100 text-red-600 rounded hover:bg-red-200 transition"
+        title="Delete Bill"
+      >
+        🗑️
+      </button>
+    )}
+  </div>
+</td>
+                      </tr>
+                    ))
+                  ) : (
+                    <tr>
+                      <td colSpan="7" className="text-center py-12 text-gray-400">
+                        <div className="text-4xl mb-2">📭</div>
+                        <p>No data found</p>
+                        <p className="text-xs mt-1">Try adjusting your filters</p>
                       </td>
                     </tr>
-                  ))
-                ) : (
-                  <tr>
-                    <td colSpan="8" className="text-center p-6 text-gray-400">
-                      No data found
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
+                  )}
+                </tbody>
+              </table>
+            </div>
           </div>
 
-          {/* Export Options */}
+          {/* Export Button */}
           {bills.length > 0 && (
-            <div className="mt-4 flex gap-2 justify-end">
+            <div className="mt-4 flex justify-end">
               <button
                 onClick={() => {
                   const csv = [
@@ -882,11 +1110,11 @@ const Reports = () => {
                   const url = window.URL.createObjectURL(blob);
                   const a = document.createElement('a');
                   a.href = url;
-                  a.download = `sales_report_${customerFilter ? `customer_${customerFilter}_` : ''}${type}_${new Date().toISOString().split('T')[0]}.csv`;
+                  a.download = `sales_report_${new Date().toISOString().split('T')[0]}.csv`;
                   a.click();
                   window.URL.revokeObjectURL(url);
                 }}
-                className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 text-sm"
+                className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm font-medium transition flex items-center gap-2 shadow-sm"
               >
                 📥 Export CSV
               </button>
@@ -895,43 +1123,39 @@ const Reports = () => {
         </>
       )}
 
-      {/* Payment Modal */}
+      {/* PAYMENT MODAL - Fixed Text Colors */}
       {showPaymentModal && selectedBill && (
         <div 
           className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4"
           onClick={closePaymentModal}
         >
           <div 
-            className="bg-white rounded-lg shadow-xl max-w-md w-full max-h-[90vh] overflow-y-auto"
+            className="bg-white rounded-xl shadow-xl max-w-md w-full max-h-[90vh] overflow-y-auto"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="sticky top-0 bg-white p-4 border-b rounded-t-lg">
-              <h3 className="text-lg font-semibold text-gray-800">
-                Pay Due Amount
-              </h3>
+            <div className="sticky top-0 bg-white p-4 border-b rounded-t-xl">
+              <h3 className="text-lg font-semibold text-gray-900">Pay Due Amount</h3>
               <p className="text-sm text-gray-600 mt-1">
-                Bill #{selectedBill.billNumber} - Customer: {selectedBill.customer || "Walk-in"}
+                Bill #{selectedBill.billNumber} - {selectedBill.customer || "Walk-in"}
               </p>
             </div>
             
             <div className="p-4 space-y-4">
-              {/* Bill Summary */}
               <div className="bg-gray-50 p-4 rounded-lg">
                 <div className="flex justify-between text-sm py-1">
-                  <span className="text-gray-600">Total Bill Amount:</span>
-                  <span className="font-semibold text-gray-800">{formatCurrency(selectedBill.total)}</span>
+                  <span className="text-gray-700">Bill Total:</span>
+                  <span className="font-semibold text-gray-900">{formatCurrency(selectedBill.total)}</span>
                 </div>
                 <div className="flex justify-between text-sm py-1">
-                  <span className="text-gray-600">Amount Already Paid:</span>
+                  <span className="text-gray-700">Already Paid:</span>
                   <span className="text-green-600 font-semibold">{formatCurrency(selectedBill.paid)}</span>
                 </div>
-                <div className="flex justify-between text-sm py-1 pt-2 border-t border-gray-300 mt-1">
-                  <span className="text-gray-800 font-bold">Remaining Due:</span>
+                <div className="flex justify-between text-sm py-1 pt-2 border-t mt-1">
+                  <span className="font-bold text-gray-900">Remaining Due:</span>
                   <span className="text-red-600 font-bold text-lg">{formatCurrency(selectedBill.due)}</span>
                 </div>
               </div>
               
-              {/* Payment Amount Input */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   Payment Amount (₹)
@@ -941,7 +1165,6 @@ const Reports = () => {
                   value={paymentAmount}
                   onChange={(e) => setPaymentAmount(e.target.value)}
                   className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-yellow-500 focus:border-yellow-500 outline-none text-gray-900 bg-white"
-                  style={{ color: 'black' }}
                   placeholder="Enter amount"
                   min="1"
                   max={selectedBill.due}
@@ -949,19 +1172,14 @@ const Reports = () => {
                   disabled={processingPayment}
                   autoFocus
                 />
-                <p className="text-xs text-gray-500 mt-1">
-                  Maximum amount: {formatCurrency(selectedBill.due)}
-                </p>
               </div>
               
-              {/* Payment Method Selection */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   Payment Method
                 </label>
                 <div className="grid grid-cols-2 gap-3">
                   <button
-                    type="button"
                     onClick={() => {
                       setPaymentMethod("cash");
                       setTransactionId("");
@@ -969,30 +1187,24 @@ const Reports = () => {
                     className={`p-3 border-2 rounded-lg font-medium transition ${
                       paymentMethod === "cash"
                         ? "border-yellow-500 bg-yellow-50 text-yellow-700"
-                        : "border-gray-300 bg-white text-gray-700 hover:border-yellow-300"
+                        : "border-gray-200 bg-white text-gray-700 hover:border-yellow-300"
                     }`}
-                    disabled={processingPayment}
                   >
                     💵 Cash
                   </button>
                   <button
-                    type="button"
-                    onClick={() => {
-                      setPaymentMethod("upi");
-                    }}
+                    onClick={() => setPaymentMethod("upi")}
                     className={`p-3 border-2 rounded-lg font-medium transition ${
                       paymentMethod === "upi"
                         ? "border-yellow-500 bg-yellow-50 text-yellow-700"
-                        : "border-gray-300 bg-white text-gray-700 hover:border-yellow-300"
+                        : "border-gray-200 bg-white text-gray-700 hover:border-yellow-300"
                     }`}
-                    disabled={processingPayment}
                   >
                     📱 UPI
                   </button>
                 </div>
               </div>
 
-              {/* Transaction ID for UPI payments */}
               {paymentMethod === "upi" && (
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -1004,14 +1216,12 @@ const Reports = () => {
                     onChange={(e) => setTransactionId(e.target.value)}
                     className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-yellow-500 focus:border-yellow-500 outline-none text-gray-900 bg-white"
                     placeholder="Enter UPI transaction ID"
-                    disabled={processingPayment}
                   />
                 </div>
               )}
             </div>
             
-            {/* Modal Actions */}
-            <div className="sticky bottom-0 bg-white p-4 border-t rounded-b-lg flex gap-3">
+            <div className="sticky bottom-0 bg-white p-4 border-t rounded-b-xl flex gap-3">
               <button
                 onClick={closePaymentModal}
                 className="flex-1 px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition font-medium"
@@ -1021,85 +1231,55 @@ const Reports = () => {
               </button>
               <button
                 onClick={processPayment}
-                className="flex-1 px-4 py-2 bg-yellow-500 text-white rounded-lg hover:bg-yellow-600 transition font-medium disabled:bg-gray-400 disabled:cursor-not-allowed"
+                className="flex-1 px-4 py-2 bg-yellow-500 text-white rounded-lg hover:bg-yellow-600 transition font-medium disabled:bg-gray-400"
                 disabled={processingPayment}
               >
-                {processingPayment ? (
-                  <span className="flex items-center justify-center gap-2">
-                    <svg className="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                    </svg>
-                    Processing...
-                  </span>
-                ) : (
-                  `Pay ${formatCurrency(parseFloat(paymentAmount) || 0)}`
-                )}
+                {processingPayment ? "Processing..." : `Pay ${formatCurrency(parseFloat(paymentAmount) || 0)}`}
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* Payment History Modal with Conditional Delete Option */}
+      {/* PAYMENT HISTORY MODAL - Fixed Text Colors */}
       {showPaymentHistoryModal && selectedBillForHistory && (
         <div 
           className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4"
           onClick={() => setShowPaymentHistoryModal(false)}
         >
           <div 
-            className="bg-white rounded-lg shadow-xl max-w-md w-full max-h-[80vh] flex flex-col"
+            className="bg-white rounded-xl shadow-xl max-w-md w-full max-h-[80vh] flex flex-col"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="sticky top-0 bg-white p-4 border-b rounded-t-lg">
+            <div className="sticky top-0 bg-white p-4 border-b rounded-t-xl">
               <div className="flex justify-between items-start">
                 <div>
-                  <h3 className="text-lg font-semibold text-gray-900">
-                    Payment History
-                  </h3>
-                  <p className="text-sm text-gray-700 mt-1">
+                  <h3 className="text-lg font-semibold text-gray-900">Payment History</h3>
+                  <p className="text-sm text-gray-600 mt-1">
                     Bill #{selectedBillForHistory.billNumber} - {selectedBillForHistory.customer || "Walk-in"}
                   </p>
                 </div>
                 <button
                   onClick={handlePrintPaymentHistory}
-                  className="bg-purple-500 text-white px-3 py-1.5 rounded-lg text-sm font-bold hover:bg-purple-600 transition-colors flex items-center gap-1"
-                  title="Print Payment History"
+                  className="px-3 py-1.5 bg-purple-500 text-white rounded-lg text-sm font-medium hover:bg-purple-600 transition"
                 >
                   🖨️ Print
                 </button>
               </div>
               
-              {/* Bill Summary */}
-              <div className="mt-3 bg-gray-100 p-3 rounded-lg">
+              <div className="mt-3 bg-gray-50 p-3 rounded-lg">
                 <div className="space-y-2">
                   <div className="flex justify-between text-sm">
-                    <span className="text-gray-700 font-medium">Bill Total:</span>
-                    <span className="font-bold text-gray-900">{formatCurrency(selectedBillForHistory.total)}</span>
+                    <span className="text-gray-700">Bill Total:</span>
+                    <span className="font-semibold text-gray-900">{formatCurrency(selectedBillForHistory.total)}</span>
                   </div>
                   <div className="flex justify-between text-sm">
-                    <span className="text-gray-700 font-medium">Paid at Bill Creation:</span>
-                    <span className="font-semibold text-green-700">{formatCurrency(selectedBillForHistory.originalPaidAmount || 0)}</span>
+                    <span className="text-gray-700">Total Paid:</span>
+                    <span className="font-semibold text-green-600">{formatCurrency(selectedBillForHistory.totalPaid)}</span>
                   </div>
                   <div className="flex justify-between text-sm">
-                    <span className="text-gray-700 font-medium">Due at Bill Creation:</span>
-                    <span className={`font-semibold ${(selectedBillForHistory.originalDueAmount || 0) > 0 ? 'text-orange-700' : 'text-green-700'}`}>
-                      {formatCurrency(selectedBillForHistory.originalDueAmount || 0)}
-                    </span>
-                  </div>
-                  {selectedBillForHistory.totalFromHistory > 0 && (
-                    <div className="flex justify-between text-sm pt-2 border-t border-gray-300">
-                      <span className="text-gray-700 font-medium">Additional Payments Made:</span>
-                      <span className="font-semibold text-green-700">{formatCurrency(selectedBillForHistory.totalFromHistory)}</span>
-                    </div>
-                  )}
-                  <div className="flex justify-between text-sm pt-2 border-t border-gray-400 mt-1">
-                    <span className="font-semibold text-gray-800">Total Paid:</span>
-                    <span className="font-bold text-green-700 text-base">{formatCurrency(selectedBillForHistory.totalPaid)}</span>
-                  </div>
-                  <div className="flex justify-between text-sm">
-                    <span className="font-semibold text-gray-800">Remaining Due:</span>
-                    <span className={`font-bold ${selectedBillForHistory.remainingDue > 0 ? 'text-red-700' : 'text-green-700'}`}>
+                    <span className="text-gray-700">Remaining Due:</span>
+                    <span className={`font-semibold ${selectedBillForHistory.remainingDue > 0 ? 'text-red-600' : 'text-green-600'}`}>
                       {formatCurrency(selectedBillForHistory.remainingDue)}
                     </span>
                   </div>
@@ -1111,59 +1291,49 @@ const Reports = () => {
               {loadingHistory ? (
                 <div className="text-center py-8">
                   <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div>
-                  <p className="mt-2 text-gray-600">Loading payment history...</p>
                 </div>
               ) : paymentHistory.length > 0 ? (
-                <>
-                  <h4 className="font-semibold text-gray-800 mb-3">Additional Payment Records:</h4>
-                  <div className="space-y-3">
-                    {paymentHistory.map((payment, index) => (
-                      <div key={index} className="border border-gray-200 rounded-lg p-3 bg-gray-50">
-                        <div className="flex justify-between items-start">
-                          <div className="flex-1">
-                            <div className="font-semibold text-gray-800">
-                              {payment.paymentMethod.toUpperCase()}
-                            </div>
+                <div className="space-y-3">
+                  {paymentHistory.map((payment, index) => (
+                    <div key={index} className="border rounded-lg p-3 bg-gray-50">
+                      <div className="flex justify-between items-start">
+                        <div className="flex-1">
+                          <div className="font-semibold text-gray-900">
+                            {payment.paymentMethod.toUpperCase()}
+                          </div>
+                          <div className="text-xs text-gray-600 mt-1">
+                            {new Date(payment.date).toLocaleString()}
+                          </div>
+                          {payment.transactionId && (
                             <div className="text-xs text-gray-600 mt-1">
-                              {new Date(payment.date).toLocaleString()}
+                              TXN: {payment.transactionId}
                             </div>
-                            {payment.transactionId && (
-                              <div className="text-xs text-gray-600 mt-1">
-                                Transaction ID: {payment.transactionId}
-                              </div>
-                            )}
-                            {payment.notes && (
-                              <div className="text-xs text-gray-600 mt-1 italic">
-                                {payment.notes}
-                              </div>
-                            )}
-                            {payment.recordedBy && payment.recordedBy !== 'system' && (
-                              <div className="text-xs text-gray-600 mt-1">
-                                Recorded by: {payment.recordedBy}
-                              </div>
-                            )}
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <div className="text-lg font-bold text-green-700">
-                              {formatCurrency(payment.amount)}
+                          )}
+                          {payment.notes && (
+                            <div className="text-xs text-gray-600 mt-1 italic">
+                              {payment.notes}
                             </div>
-                            {/* Delete button - Only show for admins */}
-                            {canDelete && (
-                              <button
-                                onClick={() => handleDeletePayment(index)}
-                                disabled={deletingPayment}
-                                className="text-red-500 hover:text-red-700 text-lg font-bold ml-2 disabled:opacity-50"
-                                title="Delete Payment"
-                              >
-                                ❌
-                              </button>
-                            )}
+                          )}
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <div className="text-lg font-bold text-green-600">
+                            {formatCurrency(payment.amount)}
                           </div>
+                          {canDelete && (
+                            <button
+                              onClick={() => handleDeletePayment(index)}
+                              disabled={deletingPayment}
+                              className="text-red-500 hover:text-red-700 text-lg font-bold ml-2 disabled:opacity-50"
+                              title="Delete Payment"
+                            >
+                              ❌
+                            </button>
+                          )}
                         </div>
                       </div>
-                    ))}
-                  </div>
-                </>
+                    </div>
+                  ))}
+                </div>
               ) : (
                 <div className="text-center py-8">
                   <div className="text-4xl mb-2">💰</div>
@@ -1171,32 +1341,16 @@ const Reports = () => {
                   <p className="text-xs text-gray-500 mt-2">
                     Only the original payment made at bill creation
                   </p>
-                  <div className="mt-4 p-3 bg-gray-100 rounded-lg">
-                    <div className="flex justify-between text-sm">
-                      <span className="text-gray-700 font-medium">Original Paid:</span>
-                      <span className="font-semibold text-green-700">{formatCurrency(selectedBillForHistory.originalPaidAmount || 0)}</span>
-                    </div>
-                    <div className="flex justify-between text-sm mt-1">
-                      <span className="text-gray-700 font-medium">Original Due:</span>
-                      <span className="font-semibold text-orange-700">{formatCurrency(selectedBillForHistory.originalDueAmount || 0)}</span>
-                    </div>
-                  </div>
                 </div>
               )}
             </div>
             
-            <div className="sticky bottom-0 bg-white p-4 border-t rounded-b-lg flex gap-2">
+            <div className="sticky bottom-0 bg-white p-4 border-t rounded-b-xl">
               <button
                 onClick={() => setShowPaymentHistoryModal(false)}
-                className="flex-1 px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition font-medium"
+                className="w-full px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition font-medium"
               >
                 Close
-              </button>
-              <button
-                onClick={handlePrintPaymentHistory}
-                className="flex-1 px-4 py-2 bg-purple-500 text-white rounded-lg hover:bg-purple-600 transition font-medium flex items-center justify-center gap-1"
-              >
-                🖨️ Print with RawBT
               </button>
             </div>
           </div>

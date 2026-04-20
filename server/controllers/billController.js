@@ -63,7 +63,7 @@ exports.createBill = async (req, res) => {
       notes
     } = req.body;
 
-    console.log("Create bill payload:", req.body);
+    console.log("Create bill payload: te4st", req.body);
 
     // ✅ Validate companyId
     if (!companyId) {
@@ -100,13 +100,14 @@ exports.createBill = async (req, res) => {
 
         return {
           productId: item.productId,
-          name: item.productName || product.name,
           quantity: item.quantity,
           price: price,
           total: total
         };
       })
     );
+
+    console.log(billItems);
 
     const subtotal = roundToTwo(billItems.reduce((sum, i) => sum + i.total, 0));
     const finalDiscountAmount = discountAmount
@@ -146,6 +147,8 @@ exports.createBill = async (req, res) => {
 
     // 🔢 Generate Bill Number for this company
     const billNumber = await getNextBillNumber(companyId);
+    
+    
 
     // 🧾 Create Bill with rounded values and companyId
     const bill = new Bill({
@@ -289,8 +292,7 @@ exports.updateBill = async (req, res) => {
         const total = roundToTwo(price * item.quantity);
 
         return {
-          productId: item.productId,
-          name: item.productName || product.name,
+          productId: item.productId,  
           quantity: item.quantity,
           price: price,
           total: total

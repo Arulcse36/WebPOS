@@ -48,7 +48,6 @@ const billSchema = new mongoose.Schema({
       ref: 'Product',
       required: true
     },
-    name: String,
     quantity: Number,
     price: Number,
     total: Number

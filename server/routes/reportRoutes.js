@@ -31,6 +31,11 @@ router.get('/bills', async (req, res) => {
       startDate.setHours(0, 0, 0, 0);
       endDate = new Date(now);
       endDate.setHours(23, 59, 59, 999);
+    } else if (type === 'all') {
+      startDate = new Date(2000, 0, 1);
+      startDate.setHours(0, 0, 0, 0);
+      endDate = new Date(now);
+      endDate.setHours(23, 59, 59, 999);
     } else if (type === 'monthly') {
       startDate = new Date(now.getFullYear(), now.getMonth(), 1);
       startDate.setHours(0, 0, 0, 0);
@@ -102,6 +107,7 @@ router.get('/bills', async (req, res) => {
         billNumber: bill.billNumber,
         date: bill.billDate,
         customer: bill.customer?.name || "Walk-in",
+        customerPhone: bill.customer?.phone,
         paymentMethod: bill.paymentMethod,
         itemCount,
         total: bill.total,
@@ -147,9 +153,10 @@ router.get('/bills', async (req, res) => {
   }
 });
 
-// ✅ DETAILED REPORT: Today's Total Collection with Full Breakdown (Simplified)
-router.get('/today-collection-detailed', async (req, res) => {
+// ✅ NEW ROUTE: Get single bill by ID
+router.get('/bills/:id', async (req, res) => {
   try {
+    const { id } = req.params;
     const { companyId } = req.query;
 
     if (!companyId) {
@@ -159,82 +166,72 @@ router.get('/today-collection-detailed', async (req, res) => {
       });
     }
 
-    const today = new Date();
-    const startOfDay = new Date(today);
-    startOfDay.setHours(0, 0, 0, 0);
-    const endOfDay = new Date(today);
-    endOfDay.setHours(23, 59, 59, 999);
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({
+        success: false,
+        error: "Invalid bill ID format"
+      });
+    }
 
-    const bills = await Bill.find({
-      companyId: new mongoose.Types.ObjectId(companyId),
-      billDate: { $gte: startOfDay, $lte: endOfDay },
-      status: { $ne: 'cancelled' }
-    }).sort({ billDate: -1 });
-
-    let totalCash = 0;
-    let totalUpi = 0;
-    let billCount = bills.length;
-
-    let dailyBills = [];
-
-    bills.forEach(bill => {
-      const cashFromHistory = (bill.paymentHistory || []).reduce((sum, p) =>
-        p.paymentMethod === 'cash' ? sum + p.amount : sum, 0);
-      const upiFromHistory = (bill.paymentHistory || []).reduce((sum, p) =>
-        p.paymentMethod === 'upi' ? sum + p.amount : sum, 0);
-
-      const billCash = (bill.cashPaid || 0) + cashFromHistory;
-      const billUpi = (bill.upiPaid || 0) + upiFromHistory;
-
-      totalCash += billCash;
-      totalUpi += billUpi;
-
-      const totalPaid = billCash + billUpi;
-      const remainingDue = Math.max(0, (bill.total || 0) - totalPaid);
-
-      const billInfo = {
-        billNumber: bill.billNumber,
-        time: bill.billDate.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }),
-        customer: bill.customer?.name || "Walk-in",
-        total: bill.total,
-        cash: billCash,
-        upi: billUpi,
-        paid: totalPaid,
-        due: remainingDue,
-        paymentMethod: bill.paymentMethod
-      };
-
-      dailyBills.push(billInfo);
+    const bill = await Bill.findOne({
+      _id: id,
+      companyId: companyId
     });
 
-    const totalCollected = totalCash + totalUpi;
-    const cashPercentage = totalCollected > 0 ? (totalCash / totalCollected) * 100 : 0;
-    const upiPercentage = totalCollected > 0 ? (totalUpi / totalCollected) * 100 : 0;
+    if (!bill) {
+      return res.status(404).json({
+        success: false,
+        error: "Bill not found"
+      });
+    }
+
+    // Calculate payment history totals
+    const paidFromHistory = (bill.paymentHistory || []).reduce((sum, p) => sum + p.amount, 0);
+    const combinedPaid = (bill.paidAmount || 0) + paidFromHistory;
+    const combinedDue = Math.max(0, (bill.total || 0) - combinedPaid);
+    const itemCount = bill.items.reduce((sum, i) => sum + i.quantity, 0);
+
+    const formattedBill = {
+      _id: bill._id,
+      id: bill._id,
+      billNumber: bill.billNumber,
+      date: bill.billDate,
+      customer: bill.customer?.name || "Walk-in",
+      customerPhone: bill.customer?.phone,
+      paymentMethod: bill.paymentMethod,
+      itemCount,
+      total: bill.total,
+      discount: bill.discount,
+      discountAmount: bill.discountAmount,
+      paidOriginal: bill.paidAmount,
+      dueOriginal: bill.dueAmount,
+      paidFromHistory: paidFromHistory,
+      paid: combinedPaid,
+      due: combinedDue,
+      items: bill.items,
+      subtotal: bill.subtotal,
+      cashPaid: bill.cashPaid,
+      upiPaid: bill.upiPaid,
+      status: bill.status,
+      paymentHistory: bill.paymentHistory,
+      createdAt: bill.createdAt,
+      updatedAt: bill.updatedAt
+    };
 
     res.json({
       success: true,
-      date: today.toISOString().split('T')[0],
-      dayName: today.toLocaleDateString('en-US', { weekday: 'long' }),
-      summary: {
-        totalCollected,
-        totalCash,
-        totalUpi,
-        totalBills: billCount,
-        cashPercentage: cashPercentage.toFixed(1),
-        upiPercentage: upiPercentage.toFixed(1)
-      },
-      bills: dailyBills
+      data: formattedBill
     });
 
   } catch (error) {
-    console.error("Today's detailed collection error:", error);
+    console.error("Error fetching bill by ID:", error);
     res.status(500).json({
       success: false,
-      error: error.message
+      error: "Failed to fetch bill",
+      message: error.message
     });
   }
 });
-
 
 // ✅ NEW API: Get Collection by Date Range
 router.get('/collection-by-date', async (req, res) => {

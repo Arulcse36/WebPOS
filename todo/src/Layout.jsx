@@ -2,21 +2,16 @@ import { useState, useEffect } from "react";
 import { NavLink, Outlet, useNavigate, useLocation } from "react-router-dom";
 
 /**
- * Android PWA-compatible Layout
- *
- * Key changes from original:
- * 1. Safe area insets via env() — handles notch, status bar, gesture nav bar
- * 2. Touch targets ≥ 48px (Google Material / Android requirement)
- * 3. Removed tap highlight, added active:scale feedback instead
- * 4. overscroll-behavior: none — prevents pull-to-refresh & bounce on Android WebView
- * 5. touch-action: manipulation — removes 300ms click delay without needing FastClick
- * 6. Bottom padding accounts for Android gesture navigation bar
- * 7. Sidebar uses translateX animation (GPU-composited, no jank on Android)
- * 8. Will-change hints for animated elements
- * 9. Backdrop on overlay is pointer-events safe
+ * Android PWA-compatible Layout with Full-Screen optimizations
+ * 
+ * Full-Screen Features:
+ * 1. Forces full-page view in mobile Chrome (hides address bar on scroll)
+ * 2. Uses 100dvh for true full height
+ * 3. Prevents overscroll and pull-to-refresh
+ * 4. Optimized for standalone PWA mode
  */
 
-// ─── Inject global Android-safe styles once ──────────────────────────────────
+// ─── Inject global Android-safe and full-screen styles ──────────────────────
 const GLOBAL_STYLE = `
   :root {
     --sat: env(safe-area-inset-top, 0px);
@@ -24,6 +19,10 @@ const GLOBAL_STYLE = `
     --sab: env(safe-area-inset-bottom, 0px);
     --sal: env(safe-area-inset-left, 0px);
     --topbar-h: calc(52px + var(--sat));
+    
+    /* Full screen variables */
+    --app-height: 100%;
+    --vh: 1vh;
   }
 
   * {
@@ -32,15 +31,60 @@ const GLOBAL_STYLE = `
     box-sizing: border-box;
   }
 
-  html, body {
+  html {
+    /* Force full page view */
+    height: 100%;
+    width: 100%;
+    overflow: hidden;
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+  }
+
+  body {
     overscroll-behavior: none;
     overflow-x: hidden;
+    overflow-y: auto;
     height: 100%;
+    width: 100%;
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    margin: 0;
+    padding: 0;
+    
+    /* Enable smooth scrolling for full-screen effect */
+    -webkit-overflow-scrolling: touch;
+    
+    /* Hide scrollbar for cleaner look (optional) */
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+  
+  body::-webkit-scrollbar {
+    display: none;
   }
 
   #root {
     min-height: 100%;
-    min-height: 100dvh; /* dynamic viewport height — accounts for Android chrome bar */
+    min-height: 100dvh;
+    width: 100%;
+    position: relative;
+    background-color: #0f172a; /* slate-900 */
+  }
+
+  /* Force full page view on mobile Chrome */
+  @supports (-webkit-touch-callout: none) {
+    body {
+      height: -webkit-fill-available;
+    }
+    #root {
+      min-height: -webkit-fill-available;
+    }
   }
 `;
 
@@ -50,6 +94,47 @@ function useGlobalStyle(css) {
     el.innerHTML = css;
     document.head.appendChild(el);
     return () => document.head.removeChild(el);
+  }, []);
+}
+
+// ─── Hook to force full-screen and hide address bar ────────────────────────
+function useFullScreenOptimization() {
+  useEffect(() => {
+    // Force scroll to hide address bar on mobile browsers
+    const hideAddressBar = () => {
+      // Scroll to top slightly to trigger address bar hide
+      setTimeout(() => {
+        window.scrollTo(0, 1);
+      }, 100);
+    };
+
+    // Multiple attempts to hide address bar
+    hideAddressBar();
+    window.addEventListener('load', hideAddressBar);
+    window.addEventListener('orientationchange', hideAddressBar);
+    
+    // For standalone PWA mode
+    if (window.matchMedia('(display-mode: standalone)').matches) {
+      document.body.classList.add('pwa-standalone');
+    }
+
+    // Set actual viewport height for mobile browsers
+    const setAppHeight = () => {
+      const doc = document.documentElement;
+      doc.style.setProperty('--app-height', `${window.innerHeight}px`);
+      doc.style.setProperty('--vh', `${window.innerHeight * 0.01}px`);
+    };
+
+    setAppHeight();
+    window.addEventListener('resize', setAppHeight);
+    window.addEventListener('orientationchange', setAppHeight);
+
+    return () => {
+      window.removeEventListener('load', hideAddressBar);
+      window.removeEventListener('orientationchange', hideAddressBar);
+      window.removeEventListener('resize', setAppHeight);
+      window.removeEventListener('orientationchange', setAppHeight);
+    };
   }, []);
 }
 
@@ -115,7 +200,7 @@ const ProductsMenu = ({ open, toggle, onNavigate, isSuperAdmin }) => (
 
     <div
       className="overflow-hidden transition-all duration-200"
-      style={{ maxHeight: open ? "300px" : "0px" }}
+      style={{ maxHeight: open ? "450px" : "0px" }}
     >
       <div className="ml-4 mt-1 flex flex-col gap-1 pb-1">
         <NavLink to="/products/category" className={({ isActive }) => subItemClass(isActive)} onClick={onNavigate}>
@@ -124,7 +209,6 @@ const ProductsMenu = ({ open, toggle, onNavigate, isSuperAdmin }) => (
         <NavLink to="/products/brand" className={({ isActive }) => subItemClass(isActive)} onClick={onNavigate}>
           🏷 Brand
         </NavLink>
-        {/* UOM - Only show for Super Admin */}
         {isSuperAdmin && (
           <NavLink to="/products/uom" className={({ isActive }) => subItemClass(isActive)} onClick={onNavigate}>
             📐 UOM
@@ -133,22 +217,62 @@ const ProductsMenu = ({ open, toggle, onNavigate, isSuperAdmin }) => (
         <NavLink to="/products/product" className={({ isActive }) => subItemClass(isActive)} onClick={onNavigate}>
           🛒 Product
         </NavLink>
+        {/* Product Bulk Link - Added */}
+        <NavLink to="/products/ProductBulk" className={({ isActive }) => subItemClass(isActive)} onClick={onNavigate}>
+          📤 Bulk Upload
+        </NavLink>
+      </div>
+    </div>
+  </div>
+);
+
+// ─── Masters Menu ────────────────────────────────────────────────────────
+const MastersMenu = ({ open, toggle, onNavigate, isSuperAdmin, userRole }) => (
+  <div>
+    <button onClick={toggle} className={toggleBtnClass}>
+      <span className="flex items-center gap-3">📋 Expenses</span>
+      <span className="text-xs text-slate-500 transition-transform duration-200"
+        style={{ transform: open ? "rotate(180deg)" : "rotate(0deg)" }}>▼</span>
+    </button>
+
+    <div
+      className="overflow-hidden transition-all duration-200"
+      style={{ maxHeight: open ? "350px" : "0px" }}
+    >
+      <div className="ml-4 mt-1 flex flex-col gap-1 pb-1">
+        <NavLink to="/masters/expense" className={({ isActive }) => subItemClass(isActive)} onClick={onNavigate}>
+          💰 Expense Master
+        </NavLink>
+        
+        <NavLink to="/masters/expense-transaction" className={({ isActive }) => subItemClass(isActive)} onClick={onNavigate}>
+          💸 Expense Transaction
+        </NavLink>
       </div>
     </div>
   </div>
 );
 
 // ─── Sidebar content with conditional rendering ──────────────────────────────
-const SidebarContent = ({ openProducts, setOpenProducts, openReports, setOpenReports, closeSidebar, isSuperAdmin, userRole }) => {
+const SidebarContent = ({ 
+  openProducts, 
+  setOpenProducts, 
+  openReports, 
+  setOpenReports, 
+  openMasters, 
+  setOpenMasters, 
+  closeSidebar, 
+  isSuperAdmin, 
+  userRole 
+}) => {
   const closeAll = () => {
     setOpenProducts(false);
     setOpenReports(false);
+    setOpenMasters(false);
     closeSidebar();
   };
 
   return (
     <nav className="flex flex-col gap-1">
-      {/* Company - Only show for Super Admin */}
       {isSuperAdmin && (
         <NavLink to="/company" className={({ isActive }) => menuItemClass(isActive)} onClick={closeAll}>
           🏢 Company
@@ -170,15 +294,28 @@ const SidebarContent = ({ openProducts, setOpenProducts, openReports, setOpenRep
         📝 Customer
       </NavLink>
 
-      {/* Users - Show for Super Admin and Company Admin (not for regular company users) */}
+      <MastersMenu
+        open={openMasters}
+        toggle={() => setOpenMasters((p) => !p)}
+        onNavigate={closeSidebar}
+        isSuperAdmin={isSuperAdmin}
+        userRole={userRole}
+      />
+
       {(isSuperAdmin || userRole === 'admin') && (
         <NavLink to="/users" className={({ isActive }) => menuItemClass(isActive)} onClick={closeAll}>
           👥 Users
         </NavLink>
       )}
 
+      {/* Regular POS Link */}
       <NavLink to="/pos" className={({ isActive }) => menuItemClass(isActive)} onClick={closeAll}>
         🧾 POS
+      </NavLink>
+
+      {/* Retail POS Link - Added */}
+      <NavLink to="/RetailPos" className={({ isActive }) => menuItemClass(isActive)} onClick={closeAll}>
+        🛍️ Retail POS
       </NavLink>
 
       <ReportsMenu
@@ -193,22 +330,21 @@ const SidebarContent = ({ openProducts, setOpenProducts, openReports, setOpenRep
 // ─── Main Layout ──────────────────────────────────────────────────────────────
 const Layout = ({ onLogout, user, isSuperAdmin }) => {
   useGlobalStyle(GLOBAL_STYLE);
+  useFullScreenOptimization();
 
   const navigate = useNavigate();
   const location = useLocation();
-  const isHome = location.pathname === "/";
 
   const [openProducts, setOpenProducts] = useState(false);
   const [openReports, setOpenReports] = useState(false);
+  const [openMasters, setOpenMasters] = useState(false);
   const [openSidebar, setOpenSidebar] = useState(false);
   
-  // Get user role from localStorage or user object
   const userRole = localStorage.getItem("userType") || user?.role || "user";
 
-  // Lock body scroll when sidebar is open (prevents background scroll on Android)
   useEffect(() => {
-    document.body.style.overflow = openSidebar ? "hidden" : "";
-    return () => { document.body.style.overflow = ""; };
+    document.body.style.overflow = openSidebar ? "hidden" : "auto";
+    return () => { document.body.style.overflow = "auto"; };
   }, [openSidebar]);
 
   const closeSidebar = () => setOpenSidebar(false);
@@ -222,10 +358,10 @@ const Layout = ({ onLogout, user, isSuperAdmin }) => {
   };
 
   return (
-    <div className="min-h-screen min-h-dvh bg-slate-900 text-white">
-
-      {/* ── Top Bar ─────────────────────────────────────────────────────── */}
-      {/* paddingTop accounts for Android status bar via safe-area-inset-top */}
+    <div className="min-h-screen w-full bg-slate-900 text-white"
+         style={{ minHeight: 'var(--app-height)' }}>
+      
+      {/* Top Bar */}
       <div
         className="fixed top-0 left-0 right-0 z-50 bg-slate-800/95 backdrop-blur-sm
                    flex items-end justify-between px-4 pb-3 border-b border-slate-700/50"
@@ -235,7 +371,6 @@ const Layout = ({ onLogout, user, isSuperAdmin }) => {
           paddingRight: "calc(16px + env(safe-area-inset-right, 0px))",
         }}
       >
-        {/* Hamburger — 48×48 touch target */}
         <button
           onClick={() => setOpenSidebar(true)}
           className="flex items-center justify-center w-12 h-12 -ml-2 rounded-xl
@@ -252,15 +387,18 @@ const Layout = ({ onLogout, user, isSuperAdmin }) => {
 
         <NavLink
           to="/"
-          onClick={() => { setOpenProducts(false); setOpenReports(false); setOpenSidebar(false); }}
+          onClick={() => { 
+            setOpenProducts(false); 
+            setOpenReports(false); 
+            setOpenMasters(false);
+            setOpenSidebar(false); 
+          }}
           className="font-bold text-lg tracking-wide active:opacity-70 transition-opacity"
         >
           Bill Mate 
         </NavLink>
 
-        {/* Right side - User Info & Logout */}
         <div className="flex items-center gap-2">
-          {/* User Info - Different for Super Admin vs Company Admin vs Company User */}
           {user && (
             <div className="hidden sm:block text-right mr-1">
               {isSuperAdmin ? (
@@ -282,14 +420,12 @@ const Layout = ({ onLogout, user, isSuperAdmin }) => {
             </div>
           )}
           
-          {/* Logout Button */}
           <button
             onClick={handleLogout}
             className="flex items-center justify-center w-12 h-12 -mr-2 rounded-xl
                        text-slate-300 hover:bg-slate-700 active:bg-slate-600
                        active:scale-95 transition-all duration-150"
             aria-label="Logout"
-            title="Logout"
           >
             <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
               <path d="M13 4L17 10L13 16M7 10H17M3 4H5V16H3V4Z" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
@@ -298,8 +434,7 @@ const Layout = ({ onLogout, user, isSuperAdmin }) => {
         </div>
       </div>
 
-      {/* ── Sidebar Drawer ───────────────────────────────────────────────── */}
-      {/* Overlay */}
+      {/* Sidebar Overlay */}
       <div
         className="fixed inset-0 z-50 transition-opacity duration-300"
         style={{
@@ -308,13 +443,11 @@ const Layout = ({ onLogout, user, isSuperAdmin }) => {
         }}
         aria-hidden={!openSidebar}
       >
-        {/* Backdrop */}
         <div
           className="absolute inset-0 bg-black/60"
           onClick={closeSidebar}
         />
 
-        {/* Drawer panel — translateX for GPU-composited animation (no jank on Android) */}
         <div
           className="absolute top-0 left-0 h-full bg-slate-800 flex flex-col
                      will-change-transform transition-transform duration-300 ease-out"
@@ -324,9 +457,9 @@ const Layout = ({ onLogout, user, isSuperAdmin }) => {
             paddingTop: "env(safe-area-inset-top, 0px)",
             paddingLeft: "env(safe-area-inset-left, 0px)",
             paddingBottom: "env(safe-area-inset-bottom, 0px)",
+            height: 'var(--app-height)',
           }}
         >
-          {/* Drawer header with user info */}
           <div className="flex items-center justify-between px-4 py-4 border-b border-slate-700/60">
             <div className="flex flex-col">
               <span className="font-bold text-base text-white">Menu</span>
@@ -349,20 +482,20 @@ const Layout = ({ onLogout, user, isSuperAdmin }) => {
             </button>
           </div>
 
-          {/* Nav items — scrollable if content overflows */}
           <div className="flex-1 overflow-y-auto overscroll-contain p-3">
             <SidebarContent
               openProducts={openProducts}
               setOpenProducts={setOpenProducts}
               openReports={openReports}
               setOpenReports={setOpenReports}
+              openMasters={openMasters}
+              setOpenMasters={setOpenMasters}
               closeSidebar={closeSidebar}
               isSuperAdmin={isSuperAdmin}
               userRole={userRole}
             />
           </div>
           
-          {/* Footer in sidebar - optional */}
           <div className="p-4 border-t border-slate-700/60 text-xs text-slate-500">
             <p>Bill Mate POS System</p>
             <p className="mt-1">v1.0.0</p>
@@ -370,8 +503,7 @@ const Layout = ({ onLogout, user, isSuperAdmin }) => {
         </div>
       </div>
 
-      {/* ── Page Content ─────────────────────────────────────────────────── */}
-      {/* paddingTop = topbar height + status bar; paddingBottom = gesture nav bar */}
+      {/* Page Content */}
       <div
         className="p-3"
         style={{
