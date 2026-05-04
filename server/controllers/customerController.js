@@ -57,6 +57,8 @@ exports.createCustomer = async (req, res) => {
   try {
     const { name, phone, email, address, gstNumber } = req.body;
 
+    console.log('Creating customer with data:', req.body);
+
     // Check if customer already exists
     if (phone) {
       const existingCustomer = await Customer.findOne({ phone });

@@ -57,7 +57,7 @@ router.get("/:id", async (req, res) => {
 // ADD product with companyId
 router.post("/", async (req, res) => {
     try {
-        const { companyId, productCode, ...productData } = req.body;
+        const { companyId, productCode, name, ...productData } = req.body;
         
         if (!companyId) {
             return res.status(400).json({ error: "Company ID required" });
@@ -67,22 +67,40 @@ router.post("/", async (req, res) => {
             return res.status(400).json({ error: "Product code required" });
         }
         
+        if (!name || !name.trim()) {
+            return res.status(400).json({ error: "Product name required" });
+        }
+        
         // Check if product with same code already exists for this company
-        const existingProduct = await Product.findOne({ 
+        const existingProductByCode = await Product.findOne({ 
             companyId, 
             productCode: productCode.trim() 
         });
         
-        if (existingProduct) {
+        if (existingProductByCode) {
             return res.status(400).json({ 
                 error: "Duplicate product code",
                 message: `Product with code "${productCode}" already exists for this company`
             });
         }
         
+        // Check if product with same name already exists for this company
+        const existingProductByName = await Product.findOne({ 
+            companyId, 
+            name: name.trim()
+        });
+        
+        if (existingProductByName) {
+            return res.status(400).json({ 
+                error: "Duplicate product name",
+                message: `Product with name "${name}" already exists for this company`
+            });
+        }
+        
         const newItem = new Product({
             ...productData,
             productCode: productCode.trim(),
+            name: name.trim(),
             companyId
         });
         
@@ -100,9 +118,22 @@ router.post("/", async (req, res) => {
         
         // Handle duplicate key error (fallback)
         if (err.code === 11000) {
+            // Determine which field caused the duplicate
+            const field = Object.keys(err.keyPattern)[0];
+            if (field === 'productCode') {
+                return res.status(400).json({ 
+                    error: "Duplicate product code",
+                    message: "Product with this code already exists for your company"
+                });
+            } else if (field === 'name') {
+                return res.status(400).json({ 
+                    error: "Duplicate product name",
+                    message: "Product with this name already exists for your company"
+                });
+            }
             return res.status(400).json({ 
-                error: "Duplicate product code",
-                message: "Product with this code already exists for your company"
+                error: "Duplicate entry",
+                message: "Product with this information already exists"
             });
         }
         
@@ -114,33 +145,61 @@ router.post("/", async (req, res) => {
 router.put("/:id", async (req, res) => {
     try {
         const { companyId } = req.query;
-        const { productCode, ...updateData } = req.body;
+        const { productCode, name, ...updateData } = req.body;
         
         if (!companyId) {
             return res.status(400).json({ error: "Company ID required" });
         }
         
+        // Build update object
+        const updateFields = { ...updateData };
+        
         // If updating product code, check for duplicates
-        if (productCode) {
-            const existingProduct = await Product.findOne({
+        if (productCode !== undefined) {
+            if (!productCode.trim()) {
+                return res.status(400).json({ error: "Product code cannot be empty" });
+            }
+            
+            const existingProductByCode = await Product.findOne({
                 companyId,
                 productCode: productCode.trim(),
                 _id: { $ne: req.params.id } // Exclude current product
             });
             
-            if (existingProduct) {
+            if (existingProductByCode) {
                 return res.status(400).json({
                     error: "Duplicate product code",
                     message: `Product with code "${productCode}" already exists for this company`
                 });
             }
-            updateData.productCode = productCode.trim();
+            updateFields.productCode = productCode.trim();
+        }
+        
+        // If updating product name, check for duplicates
+        if (name !== undefined) {
+            if (!name.trim()) {
+                return res.status(400).json({ error: "Product name cannot be empty" });
+            }
+            
+            const existingProductByName = await Product.findOne({
+                companyId,
+                name: name.trim(),
+                _id: { $ne: req.params.id } // Exclude current product
+            });
+            
+            if (existingProductByName) {
+                return res.status(400).json({
+                    error: "Duplicate product name",
+                    message: `Product with name "${name}" already exists for this company`
+                });
+            }
+            updateFields.name = name.trim();
         }
         
         // Fix deprecation warning: use returnDocument instead of new
         const updated = await Product.findOneAndUpdate(
             { _id: req.params.id, companyId },
-            updateData,
+            updateFields,
             { 
                 returnDocument: 'after',  // ✅ Replaces 'new: true'
                 runValidators: true 
@@ -159,9 +218,22 @@ router.put("/:id", async (req, res) => {
         console.error("Error updating product:", err);
         
         if (err.code === 11000) {
+            // Determine which field caused the duplicate
+            const field = Object.keys(err.keyPattern)[0];
+            if (field === 'productCode') {
+                return res.status(400).json({ 
+                    error: "Duplicate product code",
+                    message: "Product with this code already exists for your company"
+                });
+            } else if (field === 'name') {
+                return res.status(400).json({ 
+                    error: "Duplicate product name",
+                    message: "Product with this name already exists for your company"
+                });
+            }
             return res.status(400).json({ 
-                error: "Duplicate product code",
-                message: "Product with this code already exists for your company"
+                error: "Duplicate entry",
+                message: "Product with this information already exists"
             });
         }
         

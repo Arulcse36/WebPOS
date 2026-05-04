@@ -20,8 +20,7 @@ const customerSchema = new mongoose.Schema({
   email: {
     type: String,
     trim: true,
-    lowercase: true,
-    sparse: true
+    lowercase: true 
   },
   address: {
     type: String,
@@ -40,8 +39,6 @@ const customerSchema = new mongoose.Schema({
 // Compound index for companyId + phone (unique within company)
 customerSchema.index({ companyId: 1, phone: 1 }, { unique: true });
 
-// Compound index for companyId + email (unique within company)
-customerSchema.index({ companyId: 1, email: 1 }, { unique: true, sparse: true });
 
 // Index for querying customers by company
 customerSchema.index({ companyId: 1, name: 1 });

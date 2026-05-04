@@ -19,6 +19,11 @@ import SuperAdminLogin from './pages/SuperAdminLogin';
 import CompanyLogin from './pages/CompanyLogin';
 import ExpenseMaster from './pages/ExpenseMaster'; // or './components/ExpenseMaster'
 
+// In your App.jsx or routing file
+import SeedDatabase from './pages/SeedDatabase';
+
+
+
 import ExpenseTransaction from './pages/ExpenseTransaction';
 
 // Add this to your app initialization
@@ -125,6 +130,8 @@ const App = () => {
           <Route path="payment-report" element={<PaymentReport />} />
           <Route path="/masters/expense" element={<ExpenseMaster />} />
           <Route path="/masters/expense-transaction" element={<ExpenseTransaction />} />
+          // Add this route
+<Route path="/seed-database" element={<SeedDatabase />} />
 
           {/* Catch all - redirect to dashboard */}
           <Route path="*" element={<Navigate to="/dashboard" replace />} />

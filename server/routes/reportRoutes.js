@@ -3,7 +3,7 @@ const router = express.Router();
 const Bill = require('../models/Bill');
 const mongoose = require('mongoose');
 
-// 📄 INDIVIDUAL BILL REPORT with customer filter and company filter
+// In reports.js - Update the /bills route
 router.get('/bills', async (req, res) => {
   try {
     const { type, from, to, customer, companyId } = req.query;
@@ -77,7 +77,14 @@ router.get('/bills', async (req, res) => {
       }
     }
 
-    const bills = await Bill.find(query).sort({ billNumber: -1 });
+    // ✅ MODIFY THIS: Populate product details for each item
+    const bills = await Bill.find(query)
+      .populate({
+        path: 'items.productId',
+        model: 'Product',
+        select: 'name productCode' // Only get the fields we need
+      })
+      .sort({ billNumber: -1 });
 
     let grandTotal = 0;
     let totalDiscount = 0;
@@ -101,6 +108,16 @@ router.get('/bills', async (req, res) => {
       totalCombinedDue += combinedDue;
       totalItems += itemCount;
 
+      // ✅ Format items with product names from populated data
+      const formattedItems = bill.items.map(item => ({
+        productId: item.productId?._id || item.productId,
+        name: item.productId?.name || 'Unknown Product',
+        productCode: item.productId?.productCode,
+        quantity: item.quantity,
+        price: item.price,
+        total: item.total
+      }));
+
       return {
         _id: bill._id,
         id: bill._id,
@@ -118,7 +135,7 @@ router.get('/bills', async (req, res) => {
         paidFromHistory: paidFromHistory,
         paid: combinedPaid,
         due: combinedDue,
-        items: bill.items,
+        items: formattedItems, // ✅ Now includes product names
         subtotal: bill.subtotal,
         cashPaid: bill.cashPaid,
         upiPaid: bill.upiPaid,
@@ -152,7 +169,6 @@ router.get('/bills', async (req, res) => {
     });
   }
 });
-
 // ✅ NEW ROUTE: Get single bill by ID
 router.get('/bills/:id', async (req, res) => {
   try {
@@ -212,6 +228,7 @@ router.get('/bills/:id', async (req, res) => {
       subtotal: bill.subtotal,
       cashPaid: bill.cashPaid,
       upiPaid: bill.upiPaid,
+      returnAmount: bill.returnAmount,
       status: bill.status,
       paymentHistory: bill.paymentHistory,
       createdAt: bill.createdAt,
@@ -744,6 +761,8 @@ router.get('/dashboard-analytics', async (req, res) => {
       topProducts,
       dailyTrends
     });
+
+    console.log("Dashboard analytics generated successfully for companyId:", topProducts);
 
   } catch (error) {
     console.error("Dashboard analytics error:", error);

@@ -68,7 +68,7 @@ const BillsModal = ({ product, bills, onClose, onPrint }) => (
               </div>
               <div className="mt-2 flex justify-end">
                 <button
-                  onClick={() => onPrint(bill.fullBill)}
+                  onClick={() => onPrint(bill.fullBill.id)}
                   className="text-xs bg-purple-100 text-purple-700 hover:bg-purple-200 px-2 py-1 rounded font-medium"
                 >
                   🖨️ Print Bill

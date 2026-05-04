@@ -80,6 +80,10 @@ const billSchema = new mongoose.Schema({
     type: Number,
     default: 0
   },
+    returnAmount: {  // New field for change/return amount
+    type: Number,
+    default: 0
+  },
   upiPaid: {
     type: Number,
     default: 0

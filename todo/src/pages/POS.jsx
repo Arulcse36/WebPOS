@@ -287,9 +287,6 @@ const POS = () => {
   const [dueAmount, setDueAmount] = useState(0);
   const [creditType, setCreditType] = useState("full");
 
-  // Add this state near other state declarations
-  const [showSearchBox, setShowSearchBox] = useState(false);
-
   // Mobile UI State
   const [isCartOpen, setIsCartOpen] = useState(false);
   // Sidebar state for desktop
@@ -485,11 +482,6 @@ const POS = () => {
       setCurrentDateTime(formatDateTime(now));
     }
   }, [isCartOpen, isEditMode, billId]);
-
-  // Add this function to toggle search box visibility
-  const toggleSearchBox = useCallback(() => {
-    setShowSearchBox(prev => !prev);
-  }, []);
 
   const handleDateChange = (e) => {
     const newDate = e.target.value;
@@ -867,39 +859,171 @@ const POS = () => {
     setPaymentMethod("cash");
   }, []);
 
-  const handleCreateCustomer = useCallback(async () => {
-    if (!newCustomer.name.trim()) {
-      alert("Please enter customer name");
-      return;
-    }
+const handleCreateCustomer = useCallback(async () => {
+  // ========== VALIDATION ==========
+  
+  // 1. Validate Company ID
+  if (!companyId) {
+    alert("No company associated. Please login again.");
+    return false;
+  }
 
-    if (!companyId) {
-      alert("No company associated");
-      return;
-    }
+  // 2. Validate Name (Required)
+  const customerName = newCustomer.name?.trim();
+  if (!customerName) {
+    alert("❌ Customer Name is required!\n\nPlease enter the customer's full name.");
+    return false;
+  }
 
-    try {
-      const res = await axios.post(`${API}/customers`, {
-        companyId: companyId,
-        name: newCustomer.name,
-        phone: newCustomer.phone,
-        email: newCustomer.email,
-        address: newCustomer.address
-      });
-      if (res.data.success || res.data._id) {
-        const createdCustomer = res.data;
-        setCustomers(prev => [...prev, createdCustomer]);
-        setSelectedCustomer(createdCustomer);
+  // Name length validation
+  if (customerName.length < 2) {
+    alert("❌ Name is too short!\n\nPlease enter at least 2 characters.");
+    return false;
+  }
+
+  if (customerName.length > 100) {
+    alert("❌ Name is too long!\n\nMaximum 100 characters allowed.");
+    return false;
+  }
+
+  // Name format validation (letters, spaces, dots, hyphens only)
+  const nameRegex = /^[a-zA-Z\s\.\-]+$/;
+  if (!nameRegex.test(customerName)) {
+    alert("❌ Invalid Name format!\n\nUse only letters, spaces, dots (.), and hyphens (-).");
+    return false;
+  }
+
+  // 3. Validate Phone Number (Required)
+  const customerPhone = newCustomer.phone?.trim();
+  if (!customerPhone) {
+    alert("❌ Phone Number is required!\n\nPlease enter the customer's phone number.");
+    return false;
+  }
+
+  // Phone number validation for Indian numbers
+  // Allows: 10 digits, or +91 with 10 digits, or 0 with 10 digits
+  const phoneRegex = /^(\+91|0)?[6-9]\d{9}$/;
+  if (!phoneRegex.test(customerPhone)) {
+    alert("❌ Invalid Phone Number!\n\nPlease enter a valid Indian mobile number:\n• 10 digits starting with 6,7,8,9\n• Or with +91 prefix\n• Or with 0 prefix\n\nExample: 9876543210 or +919876543210");
+    return false;
+  }
+
+  // Normalize phone number to store without prefix (just 10 digits)
+  let normalizedPhone = customerPhone;
+  if (normalizedPhone.startsWith('+91')) {
+    normalizedPhone = normalizedPhone.substring(3);
+  } else if (normalizedPhone.startsWith('0')) {
+    normalizedPhone = normalizedPhone.substring(1);
+  }
+  
+  // Final validation for exactly 10 digits
+  if (!/^\d{10}$/.test(normalizedPhone)) {
+    alert("❌ Invalid Phone Number!\n\nPhone number must be exactly 10 digits after removing country code.");
+    return false;
+  }
+
+  // 4. Validate Email (Optional but validate if provided)
+  const customerEmail = newCustomer.email?.trim();
+  if (customerEmail) {
+    const emailRegex = /^[^\s@]+@([^\s@]+\.)+[^\s@]+$/;
+    if (!emailRegex.test(customerEmail)) {
+      alert("❌ Invalid Email Address!\n\nPlease enter a valid email address.\nExample: customer@example.com");
+      return false;
+    }
+  }
+
+  // 5. Validate Address (Optional but basic validation)
+  const customerAddress = newCustomer.address?.trim();
+  if (customerAddress && customerAddress.length > 500) {
+    alert("❌ Address is too long!\n\nMaximum 500 characters allowed.");
+    return false;
+  }
+
+  // ========== CHECK FOR EXISTING CUSTOMER ==========
+  try {
+    // Check if customer with same phone already exists
+    const existingCustomers = customers.filter(c => 
+      c.phone && c.phone.replace(/[^0-9]/g, '') === normalizedPhone
+    );
+    
+    if (existingCustomers.length > 0) {
+      const existingCustomer = existingCustomers[0];
+      const confirmReplace = window.confirm(
+        `⚠️ Customer with phone number ${customerPhone} already exists!\n\n` +
+        `Name: ${existingCustomer.name}\n` +
+        `Phone: ${existingCustomer.phone}\n` +
+        `${existingCustomer.email ? `Email: ${existingCustomer.email}\n` : ''}` +
+        `\nDo you want to use this existing customer instead?`
+      );
+      
+      if (confirmReplace) {
+        // Use existing customer
+        setSelectedCustomer(existingCustomer);
         setNewCustomer({ name: "", phone: "", email: "", address: "" });
         setShowCustomerModal(false);
-        alert("Customer added successfully!");
-        setPaymentMethod("cash");
+        alert("✅ Existing customer selected!");
+        return true;
+      } else {
+        return false; // User cancelled
       }
-    } catch (error) {
-      console.error("Create customer error:", error);
-      alert("Failed to create customer. Please try again.");
     }
-  }, [newCustomer, companyId]);
+  } catch (error) {
+    console.error("Error checking existing customers:", error);
+  }
+
+  // ========== CREATE NEW CUSTOMER ==========
+  try {
+    setCustomerLoading(true);
+    
+    const res = await axios.post(`${API}/customers`, {
+      companyId: companyId,
+      name: customerName,
+      phone: normalizedPhone, // Store normalized phone number (10 digits)
+      email: customerEmail || "",
+      address: customerAddress || ""
+    });
+    
+    if (res.data._id || res.data.success) {
+      const createdCustomer = res.data;
+      
+      // Update customers list
+      setCustomers(prev => [...prev, createdCustomer]);
+      
+      // Auto-select the newly created customer
+      setSelectedCustomer(createdCustomer);
+      
+      // Reset form
+      setNewCustomer({ name: "", phone: "", email: "", address: "" });
+      setShowCustomerModal(false);
+      
+      alert(`✅ Customer created successfully!\n\nName: ${customerName}\nPhone: ${normalizedPhone}`);
+      setPaymentMethod("cash");
+      return true;
+    } else {
+      throw new Error("Server did not return customer data");
+    }
+  } catch (error) {
+    console.error("Create customer error:", error);
+    
+    // Handle specific error responses from backend
+    if (error.response?.data?.error) {
+      if (error.response.data.error.includes("Phone number already exists")) {
+        alert("❌ Phone number already exists!\n\nA customer with this phone number is already registered. Please use a different number or search for existing customer.");
+      } else if (error.response.data.error.includes("Email already exists")) {
+        alert("❌ Email already exists!\n\nA customer with this email is already registered. Please use a different email.");
+      } else {
+        alert(`❌ Failed to create customer:\n\n${error.response.data.error}`);
+      }
+    } else if (error.request) {
+      alert("❌ Network error!\n\nCould not connect to server. Please check your connection and try again.");
+    } else {
+      alert("❌ Failed to create customer!\n\nPlease check all fields and try again.");
+    }
+    return false;
+  } finally {
+    setCustomerLoading(false);
+  }
+}, [companyId, newCustomer, customers]);
 
   const processCheckout = useCallback(async (paymentData = null) => {
     if (cart.length === 0) {
@@ -930,6 +1054,7 @@ const POS = () => {
         paidAmount: finalPaidAmount,
         dueAmount: finalDueAmount,
         cashPaid: finalCashPaid,
+        returnAmount:0,
         upiPaid: finalUpiPaid,
         FinalBillValue: total,
         customerId: selectedCustomer?._id || null,
@@ -1451,20 +1576,12 @@ const POS = () => {
       {/* Desktop Header */}
       <div className="hidden md:flex justify-between items-center p-4 bg-white border-b shadow-sm z-20">
         <h1 className="font-bold text-lg">POS SYSTEM {isEditMode && '(EDIT MODE)'}</h1>
-        <div className="flex gap-2">
-          <button
-            onClick={() => setIsSidebarOpen(!isSidebarOpen)}
-            className="px-3 py-1.5 bg-gray-200 text-gray-700 rounded-lg text-sm font-bold hover:bg-gray-300 transition-colors"
-          >
-            {isSidebarOpen ? '◀ Hide Categories' : '▶ Show Categories'}
-          </button>
-          <button
-            onClick={openCart}
-            className="relative px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-bold shadow-md hover:bg-blue-700 transition-colors"
-          >
-            🛒 VIEW CART ({formatQuantityDisplay(totalItemCount)})
-          </button>
-        </div>
+        <button
+          onClick={openCart}
+          className="relative px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-bold shadow-md hover:bg-blue-700 transition-colors"
+        >
+          🛒 VIEW CART ({formatQuantityDisplay(totalItemCount)})
+        </button>
       </div>
 
       {/* Main Content Area with Sidebar */}
@@ -1562,45 +1679,8 @@ const POS = () => {
             </div>
           )}
 
-          {/* Search Bar */}
-          <div className="space-y-3 mb-4">
-            {/* Search Box Toggle Button */}
-            <div className="flex justify-between items-center">
-              <button
-                onClick={toggleSearchBox}
-                className="text-xs bg-gray-200 hover:bg-gray-300 text-gray-700 px-2 py-1 rounded-lg font-medium transition-colors flex items-center gap-1"
-              >
-                {showSearchBox ? '🔍 Hide Search' : '🔍 Show Search'}
-              </button>
-              {showSearchBox && (
-                <span className="text-xs text-gray-400">Press Enter to add to cart</span>
-              )}
-            </div>
-
-            {/* Search Input - Conditionally Rendered */}
-            {showSearchBox && (
-              <div className="relative w-full">
-                <input
-                  className="w-full p-2 pl-8 border border-gray-200 rounded-lg focus:border-blue-500 outline-none text-sm text-black"
-                  placeholder="Search products or enter product code and press Enter to add to cart..."
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  onKeyPress={handleSearchKeyPress}
-                />
-                <span className="absolute left-2 top-2.5 text-xs opacity-40">🔍</span>
-              </div>
-            )}
-          </div>
-
           {/* Mobile Category Filter - Visible only on mobile */}
           <div className="md:hidden flex flex-wrap gap-2 items-center mb-3">
-            <button
-              onClick={toggleSearchBox}
-              className="px-2 py-1.5 bg-gray-200 hover:bg-gray-300 rounded-lg text-xs font-medium transition-colors"
-            >
-              {showSearchBox ? '🔍 Hide' : '🔍 Show'}
-            </button>
-
             {categories.length > 0 && (
               <select
                 className="px-2 py-1.5 border border-gray-200 rounded-lg text-xs font-medium bg-white focus:border-blue-500 outline-none"
