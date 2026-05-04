@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
+import React, { useState, useEffect, useMemo, useCallback, useRef, forwardRef, useImperativeHandle } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import axios from "axios";
 
@@ -19,26 +19,56 @@ const extractUOMName = (uom) => {
 };
 
 // --- Product Search & Add Component with Keyboard Navigation ---
-const ProductSearchInput = ({ products, onAddToCart, isLoading }) => {
+const ProductSearchInput = forwardRef(({ products, onAddToCart, isLoading, rateType }, ref) => {
   const [searchTerm, setSearchTerm] = useState("");
   const [searchResults, setSearchResults] = useState([]);
   const [showResults, setShowResults] = useState(false);
   const [selectedProduct, setSelectedProduct] = useState(null);
   const [quantity, setQuantity] = useState(1);
+  const [price, setPrice] = useState(0);
   const [selectedIndex, setSelectedIndex] = useState(-1);
+  const [editingPrice, setEditingPrice] = useState(false);
   
   const inputRef = useRef(null);
   const resultsRef = useRef(null);
+  const priceInputRef = useRef(null);
   const qtyInputRef = useRef(null);
   const addButtonRef = useRef(null);
   const selectedProductRef = useRef(null);
   const containerRef = useRef(null);
+
+  // Expose focus method to parent component
+  useImperativeHandle(ref, () => ({
+    focus: () => {
+      if (inputRef.current) {
+        inputRef.current.focus();
+      }
+    }
+  }));
 
   // Get UOM display value from product
   const getUOMDisplay = (product) => {
     if (!product) return 'NOS';
     return extractUOMName(product.uom);
   };
+
+  // Get product price based on rate type (for display in search results)
+  const getDisplayPrice = (product) => {
+    if (!product) return 0;
+    if (rateType === "wholesale") {
+      return product.wholesaleRate || product.retailRate || 0;
+    }
+    return product.retailRate || 0;
+  };
+
+  // Auto-focus on mount
+  useEffect(() => {
+    setTimeout(() => {
+      if (inputRef.current) {
+        inputRef.current.focus();
+      }
+    }, 100);
+  }, []);
 
   // Filter products based on search term
   useEffect(() => {
@@ -78,24 +108,28 @@ const ProductSearchInput = ({ products, onAddToCart, isLoading }) => {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  // Auto focus quantity input when product is selected
+  // Focus price input when product is selected
   useEffect(() => {
     if (selectedProduct) {
       setShowResults(false);
       setSearchResults([]);
       setSelectedIndex(-1);
+      setEditingPrice(true);
+      // Set price based on current rate type
+      const defaultPrice = getDisplayPrice(selectedProduct);
+      setPrice(defaultPrice);
       
       setTimeout(() => {
-        if (qtyInputRef.current) {
-          qtyInputRef.current.focus();
-          qtyInputRef.current.select();
+        if (priceInputRef.current) {
+          priceInputRef.current.focus();
+          priceInputRef.current.select();
         }
         if (selectedProductRef.current) {
           selectedProductRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
         }
       }, 100);
     }
-  }, [selectedProduct]);
+  }, [selectedProduct, rateType]);
 
   // Scroll selected item into view
   useEffect(() => {
@@ -114,7 +148,10 @@ const ProductSearchInput = ({ products, onAddToCart, isLoading }) => {
     setShowResults(false);
     setSearchResults([]);
     setQuantity(1);
+    const defaultPrice = getDisplayPrice(product);
+    setPrice(defaultPrice);
     setSelectedIndex(-1);
+    setEditingPrice(true);
   };
 
   const handleAdd = () => {
@@ -128,21 +165,30 @@ const ProductSearchInput = ({ products, onAddToCart, isLoading }) => {
       qtyInputRef.current?.focus();
       return;
     }
-    if (selectedProduct.stock !== undefined && quantity > selectedProduct.stock) {
-      alert(`Only ${selectedProduct.stock} units available in stock`);
-      qtyInputRef.current?.focus();
+    if (price <= 0) {
+      alert("Please enter a valid price");
+      priceInputRef.current?.focus();
       return;
     }
     
-    onAddToCart(selectedProduct, quantity);
+    // Create a modified product with the edited price (not based on rate type)
+    const productWithPrice = {
+      ...selectedProduct,
+      retailRate: price,
+      isPriceEdited: true
+    };
+    
+    onAddToCart(productWithPrice, quantity, price);
     
     // Reset after adding
     setSelectedProduct(null);
     setSearchTerm("");
     setQuantity(1);
+    setPrice(0);
     setShowResults(false);
     setSearchResults([]);
     setSelectedIndex(-1);
+    setEditingPrice(false);
     inputRef.current?.focus();
   };
 
@@ -150,13 +196,50 @@ const ProductSearchInput = ({ products, onAddToCart, isLoading }) => {
     setSelectedProduct(null);
     setSearchTerm("");
     setQuantity(1);
+    setPrice(0);
     setShowResults(false);
     setSearchResults([]);
     setSelectedIndex(-1);
+    setEditingPrice(false);
     inputRef.current?.focus();
   };
 
-  const handleKeyDown = (e) => {
+  const handlePriceKeyDown = (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      setEditingPrice(false);
+      setTimeout(() => {
+        if (qtyInputRef.current) {
+          qtyInputRef.current.focus();
+          qtyInputRef.current.select();
+        }
+      }, 50);
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      setEditingPrice(false);
+      setPrice(getDisplayPrice(selectedProduct));
+      setTimeout(() => {
+        if (priceInputRef.current) {
+          qtyInputRef.current?.focus();
+        }
+      }, 50);
+    }
+  };
+
+  const handleQuantityKeyDown = (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      handleAdd();
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      setQuantity(prev => prev + 1);
+    } else if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      setQuantity(prev => Math.max(0.001, prev - 1));
+    }
+  };
+
+  const handleSearchKeyDown = (e) => {
     if (showResults && searchResults.length > 0) {
       if (e.key === 'ArrowDown') {
         e.preventDefault();
@@ -177,7 +260,8 @@ const ProductSearchInput = ({ products, onAddToCart, isLoading }) => {
     if (e.key === 'Enter' && !showResults && searchTerm.trim()) {
       e.preventDefault();
       if (selectedProduct) {
-        qtyInputRef.current?.focus();
+        setEditingPrice(true);
+        setTimeout(() => priceInputRef.current?.focus(), 50);
       } else if (searchResults.length === 1) {
         handleSelectProduct(searchResults[0]);
       } else if (searchResults.length > 0 && selectedIndex >= 0 && searchResults[selectedIndex]) {
@@ -186,18 +270,12 @@ const ProductSearchInput = ({ products, onAddToCart, isLoading }) => {
     }
   };
 
-  const handleQuantityKeyDown = (e) => {
-    if (e.key === 'Enter') {
-      e.preventDefault();
-      handleAdd();
-    }
-  };
-
   const handleSearchChange = (e) => {
     const value = e.target.value;
     setSearchTerm(value);
     if (selectedProduct && value !== selectedProduct.name) {
       setSelectedProduct(null);
+      setEditingPrice(false);
     }
   };
 
@@ -209,17 +287,17 @@ const ProductSearchInput = ({ products, onAddToCart, isLoading }) => {
   };
 
   return (
-    <div ref={containerRef} className="bg-white rounded-2xl shadow-sm border border-gray-200 p-5">
-      <h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wider mb-4">Add Item</h3>
+    <div ref={containerRef} className="bg-white rounded-2xl shadow-sm border border-gray-200 p-4">
+      <h3 className="text-xs font-semibold text-gray-700 uppercase tracking-wider mb-3">Add Item</h3>
       
       {/* Product Search */}
-      <div className="relative mb-4">
+      <div className="relative mb-3">
         <div className="relative">
-          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">🔍</span>
+          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">🔍</span>
           <input
             ref={inputRef}
             type="text"
-            placeholder="Search by product name, barcode, or code... (↑ ↓ to navigate, Enter to select)"
+            placeholder="Search by name, barcode, or code... (F2 to focus)"
             value={searchTerm}
             onChange={handleSearchChange}
             onFocus={() => {
@@ -227,8 +305,8 @@ const ProductSearchInput = ({ products, onAddToCart, isLoading }) => {
                 setShowResults(true);
               }
             }}
-            onKeyDown={handleKeyDown}
-            className="w-full p-3 pl-10 border border-gray-300 rounded-xl focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 outline-none text-sm text-gray-900 bg-white"
+            onKeyDown={handleSearchKeyDown}
+            className="w-full p-2.5 pl-9 border border-gray-300 rounded-xl focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 outline-none text-sm text-gray-900 bg-white"
             autoComplete="off"
           />
         </div>
@@ -245,33 +323,33 @@ const ProductSearchInput = ({ products, onAddToCart, isLoading }) => {
                 key={product._id || idx}
                 onClick={() => handleSelectProduct(product)}
                 onMouseEnter={() => setSelectedIndex(idx)}
-                className={`w-full text-left p-3 transition-colors border-b border-gray-100 last:border-0 ${
+                className={`w-full text-left p-2.5 transition-colors border-b border-gray-100 last:border-0 ${
                   selectedIndex === idx 
                     ? 'bg-indigo-100 border-l-4 border-l-indigo-600' 
                     : 'hover:bg-gray-50'
                 }`}
               >
-                <div className="flex justify-between items-start">
-                  <div className="flex-1">
-                    <div className="font-semibold text-gray-900 text-sm">
+                <div className="flex justify-between items-center">
+                  <div className="flex-1 min-w-0">
+                    <div className="font-semibold text-gray-900 text-sm truncate">
                       {safeString(product.name)}
                     </div>
-                    <div className="flex flex-wrap gap-3 mt-1">
-                      <span className="text-xs text-gray-600">
-                        Stock: {product.stock !== undefined && product.stock !== null ? product.stock : '∞'} {getUOMDisplay(product)}
-                      </span>
-                      {product.category && (
+                    <div className="flex flex-wrap gap-2 mt-0.5">
+                      {product.productCode && (
                         <span className="text-xs text-gray-500">
-                          📁 {typeof product.category === 'object' ? safeString(product.category.name) : safeString(product.category)}
+                          🔖 {safeString(product.productCode)}
                         </span>
                       )}
                       <span className="text-xs text-gray-500">
-                        📦 UOM: {getUOMDisplay(product)}
+                        📦 {getUOMDisplay(product)}
                       </span>
                     </div>
                   </div>
-                  <div className="text-indigo-700 font-bold text-sm ml-3">
-                    {formatCurrency(typeof product.retailRate === 'number' ? product.retailRate : 0)}
+                  <div className="text-indigo-700 font-bold text-sm ml-2 flex-shrink-0">
+                    {formatCurrency(getDisplayPrice(product))}
+                    {rateType === 'wholesale' && product.wholesaleRate && (
+                      <span className="text-xs text-purple-600 ml-1">(WS)</span>
+                    )}
                   </div>
                 </div>
               </button>
@@ -280,8 +358,8 @@ const ProductSearchInput = ({ products, onAddToCart, isLoading }) => {
         )}
         
         {showResults && searchResults.length === 0 && searchTerm.trim().length > 1 && !selectedProduct && (
-          <div className="absolute z-20 left-0 right-0 mt-1 bg-white border border-gray-200 rounded-xl shadow-lg p-4 text-center text-gray-500 text-sm">
-            No products found matching "{safeString(searchTerm)}"
+          <div className="absolute z-20 left-0 right-0 mt-1 bg-white border border-gray-200 rounded-xl shadow-lg p-3 text-center text-gray-500 text-xs">
+            No products found
           </div>
         )}
       </div>
@@ -290,49 +368,52 @@ const ProductSearchInput = ({ products, onAddToCart, isLoading }) => {
       {selectedProduct && selectedProduct.name && (
         <div 
           ref={selectedProductRef}
-          className="mt-4 p-4 bg-indigo-50 rounded-xl border-2 border-indigo-300 shadow-md"
+          className="mt-3 p-3 bg-indigo-50 rounded-xl border-2 border-indigo-300"
         >
           <div className="flex justify-between items-start mb-3">
-            <div>
-              <div className="text-xs text-indigo-700 font-semibold uppercase tracking-wide">✓ Selected Product</div>
-              <div className="font-bold text-gray-900 text-base mt-1">
-                {safeString(selectedProduct.name)}
+            <div className="flex-1 min-w-0">
+              <div className="text-sm font-semibold text-indigo-700 truncate">
+                ✓ {safeString(selectedProduct.name)}
               </div>
+              {selectedProduct.productCode && (
+                <div className="text-xs text-gray-600 mt-0.5 truncate">
+                  🔖 {safeString(selectedProduct.productCode)}
+                </div>
+              )}
             </div>
             <button
               onClick={handleClearSelection}
-              className="text-gray-600 hover:text-red-700 text-sm px-3 py-1.5 rounded-lg hover:bg-white/70 transition-colors font-medium"
+              className="text-gray-500 hover:text-red-600 text-xs px-2 py-1 rounded hover:bg-white/70 transition-colors flex-shrink-0 ml-2"
             >
               ✕ Change
             </button>
           </div>
           
-          <div className="grid grid-cols-3 gap-3 mb-4 text-sm">
-            <div className="bg-white rounded-lg p-2 shadow-sm">
-              <div className="text-xs text-gray-600">💰 Price</div>
-              <div className="font-bold text-indigo-700 text-lg">
-                {formatCurrency(typeof selectedProduct.retailRate === 'number' ? selectedProduct.retailRate : 0)}
-              </div>
+          <div className="space-y-2">
+            {/* Price Input */}
+            <div>
+              <label className="block text-xs font-semibold text-gray-700 mb-1">
+                Price (₹) {rateType === 'wholesale' && '(Wholesale Rate)'}
+              </label>
+              <input
+                ref={priceInputRef}
+                type="number"
+                step="0.01"
+                min="0"
+                value={price}
+                onChange={(e) => setPrice(parseFloat(e.target.value) || 0)}
+                onKeyDown={handlePriceKeyDown}
+                className="w-full p-2 border-2 border-indigo-400 rounded-lg focus:border-indigo-600 focus:ring-2 focus:ring-indigo-200 outline-none text-sm font-semibold text-gray-900 bg-white"
+                placeholder="Enter price"
+              />
             </div>
-            <div className="bg-white rounded-lg p-2 shadow-sm">
-              <div className="text-xs text-gray-600">📦 Available Stock</div>
-              <div className={`font-bold text-lg ${selectedProduct.stock <= 5 ? 'text-red-600' : 'text-gray-800'}`}>
-                {selectedProduct.stock !== undefined && selectedProduct.stock !== null ? selectedProduct.stock : '∞'} {getUOMDisplay(selectedProduct)}
-              </div>
-            </div>
-            <div className="bg-white rounded-lg p-2 shadow-sm">
-              <div className="text-xs text-gray-600">📏 Unit of Measure</div>
-              <div className="font-bold text-gray-800 text-lg">{getUOMDisplay(selectedProduct)}</div>
-            </div>
-          </div>
-          
-          {/* Quantity Input Section */}
-          <div className="space-y-3">
-            <label className="block text-sm font-semibold text-gray-800">
-              Enter Quantity ({getUOMDisplay(selectedProduct)}) <span className="text-indigo-600 text-xs font-normal">(Press Enter to add)</span>
-            </label>
-            <div className="flex gap-3">
-              <div className="flex-1">
+            
+            {/* Quantity Input with Add button */}
+            <div>
+              <label className="block text-xs font-semibold text-gray-700 mb-1">
+                Quantity ({getUOMDisplay(selectedProduct)})
+              </label>
+              <div className="flex gap-2">
                 <input
                   ref={qtyInputRef}
                   type="number"
@@ -341,51 +422,61 @@ const ProductSearchInput = ({ products, onAddToCart, isLoading }) => {
                   value={quantity}
                   onChange={(e) => setQuantity(parseFloat(e.target.value) || 0)}
                   onKeyDown={handleQuantityKeyDown}
-                  className="w-full p-3 border-2 border-indigo-400 rounded-xl focus:border-indigo-600 focus:ring-2 focus:ring-indigo-200 outline-none text-lg font-semibold text-gray-900 bg-white"
-                  placeholder={`Enter quantity in ${getUOMDisplay(selectedProduct)}`}
+                  className="flex-1 p-2 border-2 border-indigo-400 rounded-lg focus:border-indigo-600 focus:ring-2 focus:ring-indigo-200 outline-none text-sm font-semibold text-gray-900 bg-white"
+                  placeholder="Enter quantity"
                 />
+                <button
+                  ref={addButtonRef}
+                  onClick={handleAdd}
+                  className="px-5 py-2 bg-indigo-600 text-white rounded-lg font-bold text-sm hover:bg-indigo-700 transition-all shadow-md hover:shadow-lg active:scale-95 whitespace-nowrap"
+                >
+                  Add +
+                </button>
               </div>
-              <button
-                onClick={handleAdd}
-                className="px-8 py-3 bg-indigo-600 text-white rounded-xl font-bold text-base hover:bg-indigo-700 transition-all shadow-md hover:shadow-lg active:scale-95"
-              >
-                Add to Cart +
-              </button>
+            </div>
+          </div>
+
+          {/* Subtotal Preview */}
+          <div className="mt-3 pt-2 border-t border-indigo-200">
+            <div className="flex justify-between text-sm">
+              <span className="text-gray-700">Subtotal:</span>
+              <span className="font-bold text-indigo-700">
+                {formatCurrency(quantity * price)}
+              </span>
+            </div>
+            <div className="text-xs text-gray-500 mt-0.5 text-right">
+              {formatQuantityDisplay(quantity)} × {formatCurrency(price)}
             </div>
           </div>
         </div>
       )}
       
       {/* Keyboard shortcuts help */}
-      {!selectedProduct && searchResults.length > 0 && showResults && (
-        <div className="mt-3 p-2 bg-indigo-50 rounded-lg text-center border border-indigo-200">
-          <div className="text-xs text-indigo-700">
-            <span className="inline-flex items-center mr-3">
-              <kbd className="px-1.5 py-0.5 bg-white rounded text-xs font-mono shadow-sm text-gray-700 mr-1">↑</kbd>
-              <kbd className="px-1.5 py-0.5 bg-white rounded text-xs font-mono shadow-sm text-gray-700">↓</kbd>
-              <span className="ml-1 text-gray-700">Navigate</span>
-            </span>
-            <span className="inline-flex items-center">
-              <kbd className="px-1.5 py-0.5 bg-white rounded text-xs font-mono shadow-sm text-gray-700 mr-1">↵</kbd>
-              <span className="text-gray-700">Select highlighted product</span>
-            </span>
+      {!selectedProduct && !showResults && (
+        <div className="mt-3 p-2 bg-gray-50 rounded-lg text-center border border-gray-200">
+          <div className="text-xs text-gray-600">
+            <span>🔍 Type to search • <kbd className="px-1 py-0.5 bg-white rounded text-xs font-mono shadow-sm">↑↓</kbd> navigate • <kbd className="px-1 py-0.5 bg-white rounded text-xs font-mono shadow-sm">↵</kbd> select</span>
           </div>
         </div>
       )}
       
-      {/* Initial help text */}
-      {!selectedProduct && searchResults.length === 0 && !showResults && (
-        <div className="mt-4 p-3 bg-gray-50 rounded-xl text-center border border-gray-200">
-          <div className="text-xs text-gray-600">
-            <span>🔍 Start typing to search for products</span>
+      {/* Workflow help when product is selected */}
+      {selectedProduct && (
+        <div className="mt-3 p-1.5 bg-indigo-50 rounded-lg text-center border border-indigo-200">
+          <div className="text-xs text-indigo-700">
+            <span className="inline-flex items-center gap-2">
+              <span>Price → <kbd className="px-1 py-0.5 bg-white rounded text-xs font-mono shadow-sm">↵</kbd></span>
+              <span>→ Qty → <kbd className="px-1 py-0.5 bg-white rounded text-xs font-mono shadow-sm">↵</kbd></span>
+              <span>→ Add</span>
+            </span>
           </div>
         </div>
       )}
     </div>
   );
-};
+});
 
-// --- Cart Items Grid Component with Direct Quantity Input ---
+// --- Cart Items Grid Component ---
 const CartGrid = ({ items, onUpdateQuantity, onRemoveItem, onEditPrice }) => {
   const [editingQtyId, setEditingQtyId] = useState(null);
   const [editingQtyValue, setEditingQtyValue] = useState("");
@@ -397,7 +488,6 @@ const CartGrid = ({ items, onUpdateQuantity, onRemoveItem, onEditPrice }) => {
         <div className="text-5xl mb-3 opacity-50">🛒</div>
         <p className="text-gray-500 text-sm">No items added yet</p>
         <p className="text-gray-400 text-xs mt-1">Search and add products above</p>
-        <p className="text-gray-400 text-xs mt-1">Use ↑ ↓ arrows to navigate, Enter to select product</p>
       </div>
     );
   }
@@ -474,7 +564,7 @@ const CartGrid = ({ items, onUpdateQuantity, onRemoveItem, onEditPrice }) => {
                 <tr key={productId} className="border-b border-gray-100 hover:bg-gray-50 transition-colors">
                   <td className="p-4">
                     <div className="font-semibold text-gray-900 text-sm">{productName}</div>
-                  </td>
+                   </td>
                   <td className="p-4">
                     <div className="flex flex-col items-center gap-1">
                       <div className="flex items-center justify-center gap-2">
@@ -517,7 +607,7 @@ const CartGrid = ({ items, onUpdateQuantity, onRemoveItem, onEditPrice }) => {
                       <span className="text-xs text-gray-500">{itemUOM}</span>
                       <span className="text-[10px] text-gray-400">Click qty to edit</span>
                     </div>
-                  </td>
+                    </td>
                   <td className="p-4 text-right">
                     <button
                       onClick={() => onEditPrice(item)}
@@ -526,10 +616,10 @@ const CartGrid = ({ items, onUpdateQuantity, onRemoveItem, onEditPrice }) => {
                       {formatCurrency(itemPrice)}
                       <span className="text-indigo-400 text-xs">✎</span>
                     </button>
-                  </td>
+                    </td>
                   <td className="p-4 text-right font-bold text-gray-900 text-sm">
                     {formatCurrency(itemTotal)}
-                  </td>
+                    </td>
                   <td className="p-4 text-center">
                     <button
                       onClick={() => onRemoveItem(productId)}
@@ -537,7 +627,7 @@ const CartGrid = ({ items, onUpdateQuantity, onRemoveItem, onEditPrice }) => {
                     >
                       ✕
                     </button>
-                  </td>
+                    </td>
                 </tr>
               );
             })}
@@ -561,6 +651,9 @@ const RetailPos = () => {
   const [checkoutLoading, setCheckoutLoading] = useState(false);
   const [discount, setDiscount] = useState(0);
   const [activePaymentMethod, setActivePaymentMethod] = useState(null);
+  
+  // Rate type state
+  const [rateType, setRateType] = useState("retail");
 
   const companyId = localStorage.getItem("companyId");
 
@@ -589,7 +682,8 @@ const RetailPos = () => {
     address: ""
   });
 
-  // Credit payment related states
+  // Payment modals states
+  const [showCashModal, setShowCashModal] = useState(false);
   const [cashAmount, setCashAmount] = useState("");
   const [upiAmount, setUpiAmount] = useState("");
   const [showCreditModal, setShowCreditModal] = useState(false);
@@ -597,23 +691,21 @@ const RetailPos = () => {
   const [creditType, setCreditType] = useState("full");
 
   const mainContainerRef = useRef(null);
-
-  // ─── KEYBOARD FOCUS REFS ──────────────────────────────────────────────────
+  const productSearchRef = useRef(null);
   const customerSearchRef = useRef(null);
   const creditCashInputRef = useRef(null);
+  const creditUpiInputRef = useRef(null);
   const creditConfirmBtnRef = useRef(null);
 
   const isRegisteredCustomer = useMemo(() => {
     return selectedCustomer !== null && selectedCustomer._id;
   }, [selectedCustomer]);
 
-  // Helper function to get UOM from populated object or string
   const getUOMDisplay = useCallback((product) => {
     if (!product) return 'NOS';
     return extractUOMName(product.uom);
   }, []);
 
-  // Fetch product details from product model
   const fetchProductDetails = useCallback(async (productId) => {
     if (!productId) return null;
     try {
@@ -678,7 +770,7 @@ const RetailPos = () => {
     });
   }, [removeItem]);
 
-  const handleAddToCart = useCallback(async (product, quantity) => {
+  const handleAddToCart = useCallback(async (product, quantity, customPrice = null) => {
     if (!product || !product._id) {
       console.error("Invalid product object:", product);
       alert("Invalid product selected");
@@ -690,10 +782,18 @@ const RetailPos = () => {
       return;
     }
     
-    // Fetch fresh product details
     const freshProduct = await fetchProductDetails(product._id);
     const productName = freshProduct?.name || product.name || 'Product';
-    const price = roundToTwoDecimals(product.retailRate || 0);
+    
+    let price;
+    if (customPrice !== null) {
+      price = roundToTwoDecimals(customPrice);
+    } else if (rateType === "wholesale") {
+      price = roundToTwoDecimals(freshProduct?.wholesaleRate || product.wholesaleRate || freshProduct?.retailRate || product.retailRate || 0);
+    } else {
+      price = roundToTwoDecimals(freshProduct?.retailRate || product.retailRate || 0);
+    }
+    
     const uom = getUOMDisplay(freshProduct || product);
     const productId = product._id;
     
@@ -704,12 +804,6 @@ const RetailPos = () => {
       if (existingIndex !== -1) {
         const existing = currentCart[existingIndex];
         const newQty = roundToTwoDecimals((existing.qty || 0) + quantity);
-        
-        if (product.stock !== undefined && newQty > product.stock) {
-          alert(`Cannot exceed stock limit of ${product.stock} ${uom}`);
-          return currentCart;
-        }
-        
         const newTotal = roundToTwoDecimals(newQty * price);
         const updatedCart = [...currentCart];
         updatedCart[existingIndex] = {
@@ -718,7 +812,8 @@ const RetailPos = () => {
           total: newTotal,
           uom: uom,
           price: price,
-          name: productName
+          name: productName,
+          isPriceEdited: customPrice !== null
         };
         return updatedCart;
       } else {
@@ -728,14 +823,20 @@ const RetailPos = () => {
           price: price,
           qty: quantity,
           total: roundToTwoDecimals(price * quantity),
-          uom: uom
+          uom: uom,
+          isPriceEdited: customPrice !== null
         };
         return [...currentCart, newItem];
       }
     });
-  }, [fetchProductDetails, getUOMDisplay]);
+  }, [fetchProductDetails, getUOMDisplay, rateType]);
 
-  // Load bill for edit - fetch fresh product names
+  const handleRateTypeChange = useCallback((type) => {
+    if (type === rateType) return;
+    setRateType(type);
+  }, [rateType]);
+
+  // Load bill for edit
   useEffect(() => {
     const loadBillForEdit = async () => {
       if (billId) {
@@ -746,10 +847,12 @@ const RetailPos = () => {
           });
           const bill = response.data;
           
-          console.log("Loaded bill for edit:", bill);
-          
           setBillNumber(bill.billNumber || bill.id || "N/A");
           setDiscount(bill.discount || 0);
+          
+          if (bill.rateType) {
+            setRateType(bill.rateType);
+          }
 
           if (bill.billDate) {
             const billDateObj = new Date(bill.billDate);
@@ -767,7 +870,6 @@ const RetailPos = () => {
             });
           }
 
-          // Fetch fresh product names for each item from product model
           const cartItemsWithFreshNames = [];
           
           for (const item of (bill.items || [])) {
@@ -781,18 +883,18 @@ const RetailPos = () => {
                   price: roundToTwoDecimals(item.price || 0),
                   qty: item.quantity || 0,
                   total: roundToTwoDecimals((item.quantity || 0) * (item.price || 0)),
-                  uom: extractUOMName(freshProduct.uom)
+                  uom: extractUOMName(freshProduct.uom),
+                  isPriceEdited: true
                 });
-                console.log(`Fetched fresh name for ${item.productId}: ${freshProduct.name}`);
               } else {
-                // Fallback to stored name
                 cartItemsWithFreshNames.push({
                   product: item.productId,
                   name: item.productName || item.name || "Product",
                   price: roundToTwoDecimals(item.price || 0),
                   qty: item.quantity || 0,
                   total: roundToTwoDecimals((item.quantity || 0) * (item.price || 0)),
-                  uom: extractUOMName(item.uom)
+                  uom: extractUOMName(item.uom),
+                  isPriceEdited: true
                 });
               }
             } catch (error) {
@@ -803,12 +905,12 @@ const RetailPos = () => {
                 price: roundToTwoDecimals(item.price || 0),
                 qty: item.quantity || 0,
                 total: roundToTwoDecimals((item.quantity || 0) * (item.price || 0)),
-                uom: extractUOMName(item.uom)
+                uom: extractUOMName(item.uom),
+                isPriceEdited: true
               });
             }
           }
           
-          console.log("Cart items with fresh names:", cartItemsWithFreshNames);
           setCart(cartItemsWithFreshNames);
           
         } catch (error) {
@@ -824,7 +926,6 @@ const RetailPos = () => {
     }
   }, [billId, navigate, companyId, fetchProductDetails]);
 
-  // Define processCheckout
   const processCheckout = useCallback(async (paymentData) => {
     if (!cart || cart.length === 0) {
       alert("Cart is empty!");
@@ -847,6 +948,7 @@ const RetailPos = () => {
         paymentMethod: paymentData.paymentMethod,
         paidAmount: paymentData.paidAmount,
         dueAmount: paymentData.dueAmount,
+        returnAmount: paymentData.returnAmount || 0,
         cashPaid: paymentData.cashPaid,
         upiPaid: paymentData.upiPaid,
         FinalBillValue: total,
@@ -855,6 +957,7 @@ const RetailPos = () => {
         customerPhone: selectedCustomer?.phone || "",
         customerEmail: selectedCustomer?.email || "",
         customerAddress: selectedCustomer?.address || "",
+        rateType: rateType,
         timestamp: new Date().toISOString(),
         billDate: new Date(billDate).toISOString()
       };
@@ -873,15 +976,13 @@ const RetailPos = () => {
         const savedBillId = savedBill._id || savedBill.id;
 
         if (savedBillId) {
-          console.log("Printing bill with ID:", savedBillId);
           handlePrintBill(savedBillId, () => {
             setTimeout(() => {
-              const searchInput = document.querySelector('input[placeholder*="Search by product"]');
-              if (searchInput) searchInput.focus();
+              if (productSearchRef.current) {
+                productSearchRef.current.focus();
+              }
             }, 50);
           });
-        } else {
-          console.warn("No bill ID returned from server, cannot print");
         }
 
         let message = isEditMode ? `Bill Updated Successfully!\n` : `Transaction Successful!\n`;
@@ -889,9 +990,15 @@ const RetailPos = () => {
           message += `Bill #${billNumber}\n`;
         }
         message += `Bill Date: ${formatDateTime(billDate)}\n`;
+        message += `Rate Type: ${rateType === 'wholesale' ? 'Wholesale' : 'Retail'}\n`;
         message += `Payment Method: ${paymentData.paymentMethod.toUpperCase()}\n`;
         message += `Total: ${formatCurrency(total)}\n`;
         message += `Customer: ${selectedCustomer?.name || "Walk-in Customer"}`;
+        
+        if (paymentData.returnAmount > 0) {
+          message += `\n💰 Return Amount: ${formatCurrency(paymentData.returnAmount)}`;
+        }
+        
         alert(message);
 
         if (!isEditMode) {
@@ -917,30 +1024,18 @@ const RetailPos = () => {
     } finally {
       setCheckoutLoading(false);
     }
-  }, [cart, discountAmount, total, selectedCustomer, billDate, isEditMode, billId, navigate, billNumber, companyId, discount]);
+  }, [cart, discountAmount, total, selectedCustomer, billDate, isEditMode, billId, navigate, billNumber, companyId, discount, rateType]);
 
-  // Payment handlers
-  const handleCashPayment = useCallback(async () => {
+  // Payment Handlers
+  const handleCashPayment = useCallback(() => {
     if (!cart || cart.length === 0) {
       alert("Cart is empty! Please add items to continue.");
       return;
     }
-    
-    setActivePaymentMethod('cash');
-    setCheckoutLoading(true);
-    try {
-      await processCheckout({
-        paymentMethod: 'cash',
-        paidAmount: total,
-        dueAmount: 0,
-        cashPaid: total,
-        upiPaid: 0
-      });
-    } finally {
-      setCheckoutLoading(false);
-      setActivePaymentMethod(null);
-    }
-  }, [cart, total, processCheckout]);
+    // Set default cash amount to bill amount
+    setCashAmount(total.toString());
+    setShowCashModal(true);
+  }, [cart, total]);
 
   const handleUPIPayment = useCallback(async () => {
     if (!cart || cart.length === 0) {
@@ -948,82 +1043,78 @@ const RetailPos = () => {
       return;
     }
     
+    // Directly process UPI payment with bill amount
     setActivePaymentMethod('upi');
     setCheckoutLoading(true);
+    
     try {
+      const amount = total;
+      const returnAmount = 0;
+      
       await processCheckout({
         paymentMethod: 'upi',
-        paidAmount: total,
+        paidAmount: amount,
         dueAmount: 0,
+        returnAmount: returnAmount,
         cashPaid: 0,
-        upiPaid: total
+        upiPaid: amount
       });
+      
+      alert(`✅ UPI Payment Successful!\n\nAmount: ${formatCurrency(amount)}\nThank you for your business!`);
+      
+    } catch (error) {
+      console.error("UPI Payment error:", error);
+      alert("UPI Payment failed. Please try again.");
     } finally {
       setCheckoutLoading(false);
       setActivePaymentMethod(null);
     }
   }, [cart, total, processCheckout]);
 
-  const handleFullCredit = useCallback(() => {
-    setCreditType("full");
-    setCashAmount("");
-    setUpiAmount("");
-    setDueAmount(total);
-    setShowCreditModal(true);
-  }, [total]);
+  const processCashPayment = useCallback(async (amount) => {
+    if (!amount || amount <= 0) {
+      alert("Please enter a valid cash amount");
+      return;
+    }
+    
+    // Don't allow when amount is less than bill amount
+    if (amount < total) {
+      alert(`Amount cannot be less than bill amount ${formatCurrency(total)}. Please enter amount equal to or greater than the bill amount.`);
+      return;
+    }
 
-  const handleSplitCredit = useCallback(() => {
-    setCreditType("split");
-    setCashAmount("");
-    setUpiAmount("");
-    setDueAmount(total);
-    setShowCreditModal(true);
-  }, [total]);
-
-  const handleCreditConfirm = useCallback(async () => {
+    setActivePaymentMethod('cash');
     setCheckoutLoading(true);
+    
     try {
-      if (creditType === "full") {
-        await processCheckout({
-          paymentMethod: 'credit',
-          paidAmount: 0,
-          dueAmount: total,
-          cashPaid: 0,
-          upiPaid: 0
-        });
-      } else {
-        const cashPaid = cashAmount === '' ? 0 : roundToTwoDecimals(parseFloat(cashAmount));
-        const upiPaid = upiAmount === '' ? 0 : roundToTwoDecimals(parseFloat(upiAmount));
-        const totalPaid = roundToTwoDecimals(cashPaid + upiPaid);
-
-        if (totalPaid > total) {
-          alert("Total paid amount cannot exceed total amount!");
-          return;
-        }
-
-        if (totalPaid === 0) {
-          alert("Please enter at least one payment amount or choose Full Credit option!");
-          return;
-        }
-
-        const newDueAmount = roundToTwoDecimals(total - totalPaid);
-        
-        await processCheckout({
-          paymentMethod: 'credit',
-          paidAmount: totalPaid,
-          dueAmount: newDueAmount,
-          cashPaid: cashPaid,
-          upiPaid: upiPaid
-        });
+      const returnAmount = amount > total ? amount - total : 0;
+      
+      await processCheckout({
+        paymentMethod: 'cash',
+        paidAmount: amount,
+        dueAmount: 0,
+        returnAmount: returnAmount,
+        cashPaid: amount,
+        upiPaid: 0
+      });
+      
+      // Show return amount message if applicable
+      if (returnAmount > 0) {
+        alert(`✅ Cash Payment Successful!\n\n💰 Return Amount to Customer: ${formatCurrency(returnAmount)}\n\nThank you for your business!`);
+      } else if (amount === total) {
+        alert(`✅ Cash Payment Successful!\n\nExact amount received. Thank you!`);
       }
-      setShowCreditModal(false);
+      
+      setShowCashModal(false);
       setCashAmount("");
-      setUpiAmount("");
+    } catch (error) {
+      console.error("Payment error:", error);
+      alert("Payment failed. Please try again.");
     } finally {
       setCheckoutLoading(false);
       setActivePaymentMethod(null);
     }
-  }, [creditType, cashAmount, upiAmount, total, processCheckout]);
+  }, [total, processCheckout]);
 
   const handleCreditPayment = useCallback(() => {
     if (!cart || cart.length === 0) {
@@ -1044,11 +1135,19 @@ const RetailPos = () => {
     setActivePaymentMethod('credit');
     const creditOption = window.confirm("Choose Credit Option:\n\nOK: Full Credit (No payment now)\nCancel: Split Payment (Partial payment)");
     if (creditOption) {
-      handleFullCredit();
+      setCreditType("full");
+      setCashAmount("");
+      setUpiAmount("");
+      setDueAmount(total);
+      setShowCreditModal(true);
     } else {
-      handleSplitCredit();
+      setCreditType("split");
+      setCashAmount("");
+      setUpiAmount("");
+      setDueAmount(total);
+      setShowCreditModal(true);
     }
-  }, [cart, total, isRegisteredCustomer, handleFullCredit, handleSplitCredit]);
+  }, [cart, total, isRegisteredCustomer]);
 
   const handleCashAmountChange = useCallback((e) => {
     const value = e.target.value;
@@ -1056,8 +1155,9 @@ const RetailPos = () => {
     const upiVal = upiAmount === '' ? 0 : parseFloat(upiAmount);
     const totalPaid = roundToTwoDecimals((cashVal || 0) + (upiVal || 0));
 
-    if (totalPaid > total) {
-      alert(`Total paid cannot exceed ${formatCurrency(total)}`);
+    // Don't allow total paid to be equal to total (must be less for partial credit)
+    if (totalPaid >= total) {
+      alert(`Total paid (${formatCurrency(totalPaid)}) cannot be equal to or exceed bill amount (${formatCurrency(total)}) for partial credit. Please leave some amount as due.`);
       return;
     }
 
@@ -1072,8 +1172,9 @@ const RetailPos = () => {
     const cashVal = cashAmount === '' ? 0 : parseFloat(cashAmount);
     const totalPaid = roundToTwoDecimals((cashVal || 0) + (upiVal || 0));
 
-    if (totalPaid > total) {
-      alert(`Total paid cannot exceed ${formatCurrency(total)}`);
+    // Don't allow total paid to be equal to total (must be less for partial credit)
+    if (totalPaid >= total) {
+      alert(`Total paid (${formatCurrency(totalPaid)}) cannot be equal to or exceed bill amount (${formatCurrency(total)}) for partial credit. Please leave some amount as due.`);
       return;
     }
 
@@ -1081,6 +1182,56 @@ const RetailPos = () => {
     const remainingDue = roundToTwoDecimals(total - totalPaid);
     setDueAmount(remainingDue);
   }, [cashAmount, total]);
+
+  const handleCreditConfirm = useCallback(async () => {
+    setCheckoutLoading(true);
+    try {
+      if (creditType === "full") {
+        await processCheckout({
+          paymentMethod: 'credit',
+          paidAmount: 0,
+          dueAmount: total,
+          returnAmount: 0,
+          cashPaid: 0,
+          upiPaid: 0
+        });
+      } else {
+        const cashPaid = cashAmount === '' ? 0 : roundToTwoDecimals(parseFloat(cashAmount));
+        const upiPaid = upiAmount === '' ? 0 : roundToTwoDecimals(parseFloat(upiAmount));
+        const totalPaid = roundToTwoDecimals(cashPaid + upiPaid);
+
+        // Validate that total paid is less than total
+        if (totalPaid >= total) {
+          alert(`Total paid (${formatCurrency(totalPaid)}) cannot be equal to or exceed bill amount (${formatCurrency(total)}) for partial credit. Please leave some amount as due.`);
+          return;
+        }
+
+        if (totalPaid === 0) {
+          alert("Please enter at least one payment amount or choose Full Credit option!");
+          return;
+        }
+
+        const newDueAmount = roundToTwoDecimals(total - totalPaid);
+        
+        await processCheckout({
+          paymentMethod: 'credit',
+          paidAmount: totalPaid,
+          dueAmount: newDueAmount,
+          returnAmount: 0,
+          cashPaid: cashPaid,
+          upiPaid: upiPaid
+        });
+      }
+      setShowCreditModal(false);
+      setCashAmount("");
+      setUpiAmount("");
+    } catch (error) {
+      console.error("Credit payment error:", error);
+    } finally {
+      setCheckoutLoading(false);
+      setActivePaymentMethod(null);
+    }
+  }, [creditType, cashAmount, upiAmount, total, processCheckout]);
 
   const incrementDiscount = useCallback(() => {
     setDiscount(prev => Math.min(100, prev + 5));
@@ -1102,7 +1253,6 @@ const RetailPos = () => {
     }
   }, []);
 
-  // Fetch functions
   const fetchCustomers = useCallback(async () => {
     if (!companyId) return;
     setCustomerLoading(true);
@@ -1131,7 +1281,111 @@ const RetailPos = () => {
     }
   }, [companyId]);
 
-  // Effects
+  const filteredCustomers = useMemo(() => {
+    if (!customerSearch) return customers;
+    const searchLower = customerSearch.toLowerCase();
+    return customers.filter(customer =>
+      customer.name.toLowerCase().includes(searchLower) ||
+      (customer.phone && customer.phone.includes(customerSearch)) ||
+      (customer.email && customer.email.toLowerCase().includes(searchLower))
+    );
+  }, [customers, customerSearch]);
+
+  useEffect(() => {
+    if (showCustomerModal && selectedCustomer) {
+      const currentCustomerIndex = filteredCustomers.findIndex(
+        customer => customer._id === selectedCustomer._id
+      );
+      
+      if (currentCustomerIndex !== -1) {
+        setSelectedCustomerIndex(currentCustomerIndex);
+      } else if (filteredCustomers.length > 0) {
+        setSelectedCustomerIndex(0);
+      } else {
+        setSelectedCustomerIndex(-1);
+      }
+    } else if (showCustomerModal && filteredCustomers.length > 0 && !selectedCustomer) {
+      setSelectedCustomerIndex(0);
+    } else if (!showCustomerModal) {
+      setSelectedCustomerIndex(-1);
+    }
+  }, [showCustomerModal, filteredCustomers, selectedCustomer]);
+
+  const handleSelectCustomer = useCallback((customer) => {
+    setSelectedCustomer(customer);
+    setShowCustomerModal(false);
+    setCustomerSearch("");
+    setActivePaymentMethod(null);
+    setSelectedCustomerIndex(-1);
+    setNewCustomer({ name: "", phone: "", email: "", address: "" });
+  }, []);
+
+  const handleCustomerModalKeyDown = useCallback((e) => {
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      if (filteredCustomers.length > 0) {
+        setSelectedCustomerIndex(prev => 
+          prev < filteredCustomers.length - 1 ? prev + 1 : prev
+        );
+      }
+    } 
+    else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      if (filteredCustomers.length > 0) {
+        setSelectedCustomerIndex(prev => prev > 0 ? prev - 1 : prev);
+      }
+    }
+    else if (e.key === 'Enter') {
+      e.preventDefault();
+      if (selectedCustomerIndex >= 0 && filteredCustomers[selectedCustomerIndex]) {
+        handleSelectCustomer(filteredCustomers[selectedCustomerIndex]);
+      } else if (filteredCustomers.length === 1) {
+        handleSelectCustomer(filteredCustomers[0]);
+      }
+    }
+    else if (e.key === 'Escape') {
+      setShowCustomerModal(false);
+      setCustomerSearch("");
+      setSelectedCustomerIndex(-1);
+    }
+  }, [filteredCustomers, selectedCustomerIndex, handleSelectCustomer]);
+
+  const handleCreateCustomer = useCallback(async () => {
+    if (!newCustomer.name.trim()) {
+      alert("Please enter customer name");
+      return;
+    }
+
+    if (!companyId) {
+      alert("No company associated");
+      return;
+    }
+
+    try {
+      const res = await axios.post(`${API}/customers`, {
+        companyId: companyId,
+        name: newCustomer.name,
+        phone: newCustomer.phone,
+        email: newCustomer.email,
+        address: newCustomer.address
+      });
+      
+      if (res.data.success || res.data._id) {
+        const createdCustomer = res.data;
+        setCustomers(prev => [...prev, createdCustomer]);
+        setSelectedCustomer(createdCustomer);
+        setNewCustomer({ name: "", phone: "", email: "", address: "" });
+        setShowCustomerModal(false);
+        setCustomerSearch("");
+        alert("Customer added successfully!");
+        setActivePaymentMethod(null);
+      }
+    } catch (error) {
+      console.error("Create customer error:", error);
+      alert("Failed to create customer. Please try again.");
+    }
+  }, [newCustomer, companyId]);
+
   useEffect(() => {
     window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
   }, []);
@@ -1158,7 +1412,6 @@ const RetailPos = () => {
     fetchCustomers();
   }, [companyId, fetchProducts, fetchCustomers, navigate]);
 
-  // Focus effects
   useEffect(() => {
     if (showCustomerModal) {
       setTimeout(() => {
@@ -1168,13 +1421,13 @@ const RetailPos = () => {
   }, [showCustomerModal]);
 
   useEffect(() => {
-    if (showCreditModal) {
+    if (showCreditModal && creditType === 'split') {
       setTimeout(() => {
-        if (creditType === 'split') {
-          creditCashInputRef.current?.focus();
-        } else {
-          creditConfirmBtnRef.current?.focus();
-        }
+        creditCashInputRef.current?.focus();
+      }, 50);
+    } else if (showCreditModal && creditType === 'full') {
+      setTimeout(() => {
+        creditConfirmBtnRef.current?.focus();
       }, 50);
     }
   }, [showCreditModal, creditType]);
@@ -1198,6 +1451,19 @@ const RetailPos = () => {
           setShowCustomerModal(false);
           return;
         }
+        if (showCashModal) {
+          setShowCashModal(false);
+          setCashAmount("");
+          return;
+        }
+      }
+
+      if (e.key === 'F2') {
+        e.preventDefault();
+        if (productSearchRef.current) {
+          productSearchRef.current.focus();
+        }
+        return;
       }
 
       if ((e.ctrlKey || e.metaKey) && e.key === 'c') {
@@ -1219,6 +1485,7 @@ const RetailPos = () => {
       else if (e.key === 'F1') {
         e.preventDefault();
         alert("Keyboard Shortcuts:\n\n" +
+          "F2: Focus Product Search / Barcode Scanner\n" +
           "Ctrl/Cmd + C: Cash Payment\n" +
           "Ctrl/Cmd + U: UPI Payment\n" +
           "Ctrl/Cmd + R: Credit Payment (registered customers only)\n" +
@@ -1231,7 +1498,7 @@ const RetailPos = () => {
     window.addEventListener('keydown', handleGlobalKeys);
     return () => window.removeEventListener('keydown', handleGlobalKeys);
   }, [isRegisteredCustomer, handleCashPayment, handleUPIPayment, handleCreditPayment,
-      showEditPriceModal, showCreditModal, showCustomerModal]);
+      showEditPriceModal, showCreditModal, showCustomerModal, showCashModal]);
 
   const handleDateChange = (e) => {
     const newDate = e.target.value;
@@ -1280,7 +1547,8 @@ const RetailPos = () => {
         return {
           ...item,
           price: newPrice,
-          total: newTotal
+          total: newTotal,
+          isPriceEdited: true
         };
       }
       return item;
@@ -1290,71 +1558,6 @@ const RetailPos = () => {
     setSelectedEditItem(null);
     setEditPriceValue("");
   }, [selectedEditItem, editPriceValue]);
-
-  const filteredCustomers = useMemo(() => {
-    if (!customerSearch) return customers;
-    const searchLower = customerSearch.toLowerCase();
-    return customers.filter(customer =>
-      customer.name.toLowerCase().includes(searchLower) ||
-      (customer.phone && customer.phone.includes(customerSearch)) ||
-      (customer.email && customer.email.toLowerCase().includes(searchLower))
-    );
-  }, [customers, customerSearch]);
-
-  useEffect(() => {
-    if (showCustomerModal && filteredCustomers.length > 0) {
-      setSelectedCustomerIndex(0);
-    } else {
-      setSelectedCustomerIndex(-1);
-    }
-  }, [customerSearch, filteredCustomers, showCustomerModal]);
-
-  const handleSelectCustomer = useCallback((customer) => {
-    setSelectedCustomer(customer);
-    setShowCustomerModal(false);
-    setCustomerSearch("");
-    setActivePaymentMethod(null);
-    setSelectedCustomerIndex(-1);
-  }, []);
-
-  const handleRemoveCustomer = useCallback(() => {
-    setSelectedCustomer(null);
-    setActivePaymentMethod(null);
-  }, []);
-
-  const handleCreateCustomer = useCallback(async () => {
-    if (!newCustomer.name.trim()) {
-      alert("Please enter customer name");
-      return;
-    }
-
-    if (!companyId) {
-      alert("No company associated");
-      return;
-    }
-
-    try {
-      const res = await axios.post(`${API}/customers`, {
-        companyId: companyId,
-        name: newCustomer.name,
-        phone: newCustomer.phone,
-        email: newCustomer.email,
-        address: newCustomer.address
-      });
-      if (res.data.success || res.data._id) {
-        const createdCustomer = res.data;
-        setCustomers(prev => [...prev, createdCustomer]);
-        setSelectedCustomer(createdCustomer);
-        setNewCustomer({ name: "", phone: "", email: "", address: "" });
-        setShowCustomerModal(false);
-        alert("Customer added successfully!");
-        setActivePaymentMethod(null);
-      }
-    } catch (error) {
-      console.error("Create customer error:", error);
-      alert("Failed to create customer. Please try again.");
-    }
-  }, [newCustomer, companyId]);
 
   if (!companyId) {
     return (
@@ -1394,6 +1597,31 @@ const RetailPos = () => {
           </div>
           
           <div className="flex items-center gap-3">
+            {/* Rate Type Toggle */}
+            <div className="flex items-center gap-2 bg-white px-3 py-1.5 rounded-xl shadow-sm border border-gray-200">
+              <span className="text-xs text-gray-600 font-medium">Rate:</span>
+              <button
+                onClick={() => handleRateTypeChange('retail')}
+                className={`px-3 py-1 rounded-lg text-sm font-medium transition-all ${
+                  rateType === 'retail'
+                    ? 'bg-indigo-600 text-white shadow-sm'
+                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                }`}
+              >
+                Retail
+              </button>
+              <button
+                onClick={() => handleRateTypeChange('wholesale')}
+                className={`px-3 py-1 rounded-lg text-sm font-medium transition-all ${
+                  rateType === 'wholesale'
+                    ? 'bg-indigo-600 text-white shadow-sm'
+                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                }`}
+              >
+                Wholesale
+              </button>
+            </div>
+
             {/* Bill Date */}
             <div className="flex items-center gap-2 bg-white px-3 py-2 rounded-xl shadow-sm border border-gray-200">
               {isEditingDate ? (
@@ -1417,7 +1645,7 @@ const RetailPos = () => {
               )}
             </div>
             
-            {/* Customer Button with Shortcut */}
+            {/* Customer Button */}
             <button
               onClick={() => setShowCustomerModal(true)}
               className="flex items-center gap-2 bg-white px-4 py-2 rounded-xl shadow-sm border border-gray-200 text-sm font-medium text-gray-700 hover:border-indigo-300 transition-colors"
@@ -1431,6 +1659,10 @@ const RetailPos = () => {
 
         {/* Keyboard Shortcuts Bar */}
         <div className="mb-4 p-2 bg-gray-100 rounded-lg flex flex-wrap justify-center gap-4 text-xs text-gray-600">
+          <span className="flex items-center gap-1">
+            <kbd className="px-1.5 py-0.5 bg-white rounded text-xs font-mono shadow-sm">F2</kbd>
+            <span>Focus Search</span>
+          </span>
           <span className="flex items-center gap-1">
             <kbd className="px-1.5 py-0.5 bg-white rounded text-xs font-mono shadow-sm">Ctrl</kbd>+<kbd className="px-1.5 py-0.5 bg-white rounded text-xs font-mono shadow-sm">C</kbd>
             <span>CASH</span>
@@ -1459,30 +1691,33 @@ const RetailPos = () => {
           )}
         </div>
 
-        {/* Main Content - Two Column Layout */}
+        {/* Main Content */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Left Column - Product Search & Add */}
+          {/* Left Column - Product Search */}
           <div className="lg:col-span-1">
             <ProductSearchInput 
+              ref={productSearchRef}
               products={products}
               onAddToCart={handleAddToCart}
               isLoading={loading}
+              rateType={rateType}
             />
           </div>
 
-          {/* Right Column - Cart Items Grid & Summary */}
+          {/* Right Column */}
           <div className="lg:col-span-2 space-y-6">
-            {/* Cart Items Grid */}
-            <CartGrid 
-              items={cart}
-              onUpdateQuantity={updateQty}
-              onRemoveItem={removeItem}
-              onEditPrice={handleEditPrice}
-            />
-
             {/* Bill Summary */}
-            <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-5">
-              <h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wider mb-4">Bill Summary</h3>
+            <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-5 sticky top-4">
+              <div className="flex justify-between items-center mb-4">
+                <h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wider">Bill Summary</h3>
+                <div className={`px-2 py-1 rounded-full text-xs font-semibold ${
+                  rateType === 'wholesale' 
+                    ? 'bg-purple-100 text-purple-700' 
+                    : 'bg-indigo-100 text-indigo-700'
+                }`}>
+                  {rateType === 'wholesale' ? '💰 Wholesale Rate' : '🏷️ Retail Rate'}
+                </div>
+              </div>
               
               <div className="space-y-3">
                 <div className="flex justify-between text-sm">
@@ -1495,7 +1730,6 @@ const RetailPos = () => {
                   <span className="font-semibold text-gray-900">{formatCurrency(subtotal)}</span>
                 </div>
                 
-                {/* Discount Section */}
                 <div className="flex items-center justify-between gap-4">
                   <span className="text-sm text-gray-600">Discount</span>
                   <div className="flex items-center gap-2">
@@ -1541,7 +1775,7 @@ const RetailPos = () => {
                 </div>
               </div>
 
-              {/* Payment Action Buttons - Direct Checkout */}
+              {/* Payment Buttons */}
               <div className="mt-5 pt-3 border-t border-gray-200">
                 <span className="text-xs font-semibold text-gray-600 uppercase tracking-wider block mb-3">Complete Sale</span>
                 <div className="grid grid-cols-3 gap-3">
@@ -1607,6 +1841,14 @@ const RetailPos = () => {
                 )}
               </div>
             </div>
+
+            {/* Cart Items */}
+            <CartGrid 
+              items={cart}
+              onUpdateQuantity={updateQty}
+              onRemoveItem={removeItem}
+              onEditPrice={handleEditPrice}
+            />
           </div>
         </div>
       </div>
@@ -1618,7 +1860,11 @@ const RetailPos = () => {
             <div className="p-5 border-b flex justify-between items-center">
               <h3 className="font-bold text-lg text-gray-800">Select Customer</h3>
               <button
-                onClick={() => setShowCustomerModal(false)}
+                onClick={() => {
+                  setShowCustomerModal(false);
+                  setCustomerSearch("");
+                  setNewCustomer({ name: "", phone: "", email: "", address: "" });
+                }}
                 className="text-gray-400 hover:text-gray-600 text-xl"
               >
                 ✕
@@ -1626,48 +1872,19 @@ const RetailPos = () => {
             </div>
 
             <div className="p-4 border-b">
-              <form onSubmit={(e) => e.preventDefault()}>
-                <input
-                  ref={customerSearchRef}
-                  type="text"
-                  placeholder="Search by name, phone or email... (↑ ↓ to navigate, Enter to select)"
-                  className="w-full p-2.5 border border-gray-300 rounded-xl focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none text-sm text-gray-900"
-                  value={customerSearch}
-                  onChange={(e) => {
-                    setCustomerSearch(e.target.value);
-                    if (filteredCustomers.length > 0) {
-                      setSelectedCustomerIndex(0);
-                    }
-                  }}
-                  onKeyDown={(e) => {
-                    if (filteredCustomers.length === 0) return;
-                    
-                    if (e.key === 'ArrowDown') {
-                      e.preventDefault();
-                      setSelectedCustomerIndex(prev => 
-                        prev < filteredCustomers.length - 1 ? prev + 1 : prev
-                      );
-                    } 
-                    else if (e.key === 'ArrowUp') {
-                      e.preventDefault();
-                      setSelectedCustomerIndex(prev => prev > 0 ? prev - 1 : prev);
-                    }
-                    else if (e.key === 'Enter' && selectedCustomerIndex >= 0) {
-                      e.preventDefault();
-                      handleSelectCustomer(filteredCustomers[selectedCustomerIndex]);
-                    }
-                    else if (e.key === 'Enter' && filteredCustomers.length === 1) {
-                      e.preventDefault();
-                      handleSelectCustomer(filteredCustomers[0]);
-                    }
-                  }}
-                  autoComplete="new-password"
-                  autoCorrect="off"
-                  autoCapitalize="off"
-                  spellCheck="false"
-                  name="customer-search-field"
-                />
-              </form>
+              <input
+                ref={customerSearchRef}
+                type="text"
+                placeholder="Search by name, phone or email... (↑ ↓ to navigate, Enter to select)"
+                className="w-full p-2.5 border border-gray-300 rounded-xl focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none text-sm text-gray-900"
+                value={customerSearch}
+                onChange={(e) => {
+                  setCustomerSearch(e.target.value);
+                  setSelectedCustomerIndex(-1);
+                }}
+                onKeyDown={handleCustomerModalKeyDown}
+                autoComplete="off"
+              />
             </div>
 
             <div className="flex-1 overflow-y-auto p-4">
@@ -1684,18 +1901,34 @@ const RetailPos = () => {
                         className={`w-full text-left p-3 border rounded-xl transition-all ${
                           idx === selectedCustomerIndex
                             ? 'border-indigo-500 bg-indigo-100 ring-2 ring-indigo-200' 
+                            : selectedCustomer?._id === customer._id
+                            ? 'border-green-500 bg-green-50 ring-1 ring-green-200'
                             : 'border-gray-200 hover:border-indigo-300 hover:bg-indigo-50'
                         }`}
                       >
-                        <div className="font-semibold text-sm text-gray-900">{customer.name}</div>
-                        {customer.phone && <div className="text-xs text-gray-600 mt-1">📞 {customer.phone}</div>}
-                        {customer.email && <div className="text-xs text-gray-600">✉️ {customer.email}</div>}
+                        <div className="flex justify-between items-start">
+                          <div className="flex-1">
+                            <div className="font-semibold text-sm text-gray-900">{customer.name}</div>
+                            {customer.phone && <div className="text-xs text-gray-600 mt-1">📞 {customer.phone}</div>}
+                            {customer.email && <div className="text-xs text-gray-600">✉️ {customer.email}</div>}
+                            {customer.address && <div className="text-xs text-gray-600 mt-1">📍 {customer.address}</div>}
+                          </div>
+                          {selectedCustomer?._id === customer._id && (
+                            <span className="text-xs bg-green-100 text-green-700 px-2 py-1 rounded-full ml-2 whitespace-nowrap">
+                              ✓ Selected
+                            </span>
+                          )}
+                        </div>
                       </button>
                     ))}
                   </div>
-                  {customerSearch && filteredCustomers.length > 0 && (
-                    <div className="mt-3 text-center text-xs text-indigo-600">
-                      Use ↑ ↓ arrows to navigate, Enter to select
+                  {filteredCustomers.length > 0 && (
+                    <div className="mt-3 text-center text-xs text-gray-500">
+                      {selectedCustomerIndex >= 0 ? (
+                        <span>Press <kbd className="px-1 py-0.5 bg-gray-100 rounded text-xs font-mono">Enter</kbd> to select highlighted customer</span>
+                      ) : (
+                        <span>Use <kbd className="px-1 py-0.5 bg-gray-100 rounded text-xs font-mono">↑↓</kbd> arrows to navigate</span>
+                      )}
                     </div>
                   )}
                 </>
@@ -1710,10 +1943,13 @@ const RetailPos = () => {
                       className="w-full p-2.5 border border-gray-300 rounded-xl mb-3 text-sm text-gray-900"
                       value={newCustomer.name}
                       onChange={(e) => setNewCustomer(prev => ({ ...prev, name: e.target.value }))}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          handleCreateCustomer();
+                        }
+                      }}
                       autoComplete="off"
-                      autoCorrect="off"
-                      autoCapitalize="off"
-                      spellCheck="false"
                     />
                     <input
                       type="tel"
@@ -1721,10 +1957,13 @@ const RetailPos = () => {
                       className="w-full p-2.5 border border-gray-300 rounded-xl mb-3 text-sm text-gray-900"
                       value={newCustomer.phone}
                       onChange={(e) => setNewCustomer(prev => ({ ...prev, phone: e.target.value }))}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          handleCreateCustomer();
+                        }
+                      }}
                       autoComplete="off"
-                      autoCorrect="off"
-                      autoCapitalize="off"
-                      spellCheck="false"
                     />
                     <input
                       type="email"
@@ -1732,10 +1971,13 @@ const RetailPos = () => {
                       className="w-full p-2.5 border border-gray-300 rounded-xl mb-3 text-sm text-gray-900"
                       value={newCustomer.email}
                       onChange={(e) => setNewCustomer(prev => ({ ...prev, email: e.target.value }))}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          handleCreateCustomer();
+                        }
+                      }}
                       autoComplete="off"
-                      autoCorrect="off"
-                      autoCapitalize="off"
-                      spellCheck="false"
                     />
                     <textarea
                       placeholder="Address"
@@ -1744,9 +1986,6 @@ const RetailPos = () => {
                       value={newCustomer.address}
                       onChange={(e) => setNewCustomer(prev => ({ ...prev, address: e.target.value }))}
                       autoComplete="off"
-                      autoCorrect="off"
-                      autoCapitalize="off"
-                      spellCheck="false"
                     />
                     <button
                       onClick={handleCreateCustomer}
@@ -1762,6 +2001,105 @@ const RetailPos = () => {
         </div>
       )}
 
+{/* Cash Payment Modal */}
+{showCashModal && (
+  <div className="fixed inset-0 bg-black/50 z-[100] flex items-center justify-center p-4 backdrop-blur-sm">
+    <div className="bg-white rounded-2xl max-w-md w-full shadow-2xl">
+      <div className="p-5 border-b flex justify-between items-center">
+        <h3 className="font-bold text-lg text-gray-800">💵 Cash Payment</h3>
+        <button
+          onClick={() => {
+            setShowCashModal(false);
+            setCashAmount("");
+          }}
+          className="text-gray-400 hover:text-gray-600 text-xl"
+        >
+          ✕
+        </button>
+      </div>
+      
+      <div className="p-5 space-y-4">
+        <div className="bg-gray-50 p-4 rounded-xl">
+          <div className="text-sm text-gray-600">Bill Amount</div>
+          <div className="text-2xl font-bold text-indigo-700">{formatCurrency(total)}</div>
+        </div>
+
+        <div>
+          <label className="block text-sm font-semibold text-gray-700 mb-2">
+            Enter Cash Amount
+          </label>
+          <input
+            type="number"
+            step="0.01"
+            min={total}
+            className="w-full p-3 border border-gray-300 rounded-xl focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 outline-none text-lg font-semibold text-gray-900"
+            placeholder="Enter cash amount"
+            value={cashAmount}
+            onChange={(e) => setCashAmount(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                const amount = parseFloat(e.target.value);
+                if (!isNaN(amount) && amount >= total) {
+                  processCashPayment(amount);
+                } else if (amount < total) {
+                  alert(`Amount cannot be less than bill amount ${formatCurrency(total)}`);
+                }
+              }
+            }}
+            onFocus={(e) => e.target.select()}
+            autoFocus
+          />
+          <p className="text-xs text-gray-500 mt-1">
+            Minimum amount: {formatCurrency(total)}
+          </p>
+        </div>
+
+        {cashAmount && parseFloat(cashAmount) > 0 && (
+          <>
+            {parseFloat(cashAmount) === total && (
+              <div className="bg-emerald-50 p-3 rounded-xl">
+                <div className="text-sm text-gray-600">Payment Status</div>
+                <div className="text-xl font-bold text-emerald-700">
+                  ✅ Exact Amount Paid
+                </div>
+                <div className="text-xs text-gray-500 mt-1">
+                  No balance due or return
+                </div>
+              </div>
+            )}
+
+            {parseFloat(cashAmount) > total && (
+              <div className="bg-green-50 p-3 rounded-xl">
+                <div className="text-sm text-gray-600">Return Amount</div>
+                <div className="text-2xl font-bold text-green-700">
+                  {formatCurrency(parseFloat(cashAmount) - total)}
+                </div>
+                <div className="text-xs text-gray-500 mt-1">
+                  🎉 Return to customer: {formatCurrency(parseFloat(cashAmount) - total)}
+                </div>
+              </div>
+            )}
+          </>
+        )}
+
+        <button
+          onClick={() => {
+            const amount = parseFloat(cashAmount);
+            if (!isNaN(amount) && amount >= total) {
+              processCashPayment(amount);
+            } else {
+              alert(`Please enter amount equal to or greater than ${formatCurrency(total)}`);
+            }
+          }}
+          className="w-full bg-indigo-600 text-white py-3 rounded-xl font-semibold text-sm hover:bg-indigo-700 transition-colors"
+        >
+          Confirm Cash Payment
+        </button>
+      </div>
+    </div>
+  </div>
+)}
       {/* Credit Payment Modal */}
       {showCreditModal && (
         <div className="fixed inset-0 bg-black/50 z-[100] flex items-center justify-center p-4 backdrop-blur-sm">
@@ -1774,12 +2112,15 @@ const RetailPos = () => {
                 onClick={() => {
                   setShowCreditModal(false);
                   setActivePaymentMethod(null);
+                  setCashAmount("");
+                  setUpiAmount("");
                 }}
                 className="text-gray-400 hover:text-gray-600 text-xl"
               >
                 ✕
               </button>
             </div>
+            
             <div className="p-5 space-y-4">
               <div className="bg-gray-50 p-4 rounded-xl">
                 <div className="text-sm text-gray-600">Total Amount</div>
@@ -1795,13 +2136,22 @@ const RetailPos = () => {
                     <input
                       ref={creditCashInputRef}
                       type="number"
-                      placeholder="Enter cash amount"
-                      className="w-full p-2.5 border border-gray-300 rounded-xl focus:border-indigo-500 outline-none text-sm text-gray-900"
-                      value={cashAmount}
-                      onChange={handleCashAmountChange}
                       step="0.01"
                       min="0"
                       max={total}
+                      value={cashAmount}
+                      onChange={handleCashAmountChange}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          if (creditUpiInputRef.current) {
+                            creditUpiInputRef.current.focus();
+                          }
+                        }
+                      }}
+                      onFocus={(e) => e.target.select()}
+                      className="w-full p-2.5 border border-gray-300 rounded-xl focus:border-indigo-500 outline-none text-sm text-gray-900"
+                      placeholder="Enter cash amount"
                     />
                   </div>
 
@@ -1810,14 +2160,25 @@ const RetailPos = () => {
                       UPI Amount Paid 📱
                     </label>
                     <input
+                      ref={creditUpiInputRef}
                       type="number"
-                      placeholder="Enter UPI amount"
-                      className="w-full p-2.5 border border-gray-300 rounded-xl focus:border-indigo-500 outline-none text-sm text-gray-900"
-                      value={upiAmount}
-                      onChange={handleUpiAmountChange}
                       step="0.01"
                       min="0"
                       max={total}
+                      value={upiAmount}
+                      onChange={handleUpiAmountChange}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          if (creditConfirmBtnRef.current && 
+                              ((parseFloat(cashAmount) || 0) + (parseFloat(upiAmount) || 0)) > 0) {
+                            creditConfirmBtnRef.current.focus();
+                          }
+                        }
+                      }}
+                      onFocus={(e) => e.target.select()}
+                      className="w-full p-2.5 border border-gray-300 rounded-xl focus:border-indigo-500 outline-none text-sm text-gray-900"
+                      placeholder="Enter UPI amount"
                     />
                   </div>
 
@@ -1827,30 +2188,50 @@ const RetailPos = () => {
                       {formatCurrency((parseFloat(cashAmount) || 0) + (parseFloat(upiAmount) || 0))}
                     </div>
                   </div>
+
+                  <div className="bg-amber-50 p-4 rounded-xl">
+                    <div className="text-sm text-gray-600">Due Amount</div>
+                    <div className="text-2xl font-bold text-amber-700">
+                      {formatCurrency(dueAmount)}
+                    </div>
+                    <div className="text-xs text-gray-500 mt-2">
+                      ⚠️ Partial payment only - Full amount requires immediate payment via Cash or UPI
+                    </div>
+                  </div>
+
+                  <button
+                    ref={creditConfirmBtnRef}
+                    onClick={handleCreditConfirm}
+                    disabled={((parseFloat(cashAmount) || 0) + (parseFloat(upiAmount) || 0)) === 0}
+                    className="w-full bg-amber-600 text-white py-3 rounded-xl font-semibold text-sm hover:bg-amber-700 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed"
+                  >
+                    Confirm Split Payment
+                  </button>
                 </>
               ) : (
-                <div className="bg-amber-50 p-4 rounded-xl">
-                  <div className="text-sm text-gray-600">Credit Amount</div>
-                  <div className="text-2xl font-bold text-amber-700">{formatCurrency(total)}</div>
-                  <div className="text-xs text-gray-500 mt-2">Full credit - No payment required now</div>
+                // Full Credit option - Auto focus on Confirm button
+                <div className="space-y-4">
+                  <div className="bg-yellow-50 p-4 rounded-xl border border-yellow-200">
+                    <div className="text-sm text-gray-600">Credit Amount</div>
+                    <div className="text-2xl font-bold text-yellow-700">{formatCurrency(total)}</div>
+                    <div className="text-xs text-gray-500 mt-2">Full credit - No payment required now</div>
+                  </div>
+
+                  <div className="bg-blue-50 p-4 rounded-xl">
+                    <div className="text-sm text-gray-600">Due Amount</div>
+                    <div className="text-2xl font-bold text-blue-700">{formatCurrency(total)}</div>
+                  </div>
+
+                  <button
+                    ref={creditConfirmBtnRef}
+                    onClick={handleCreditConfirm}
+                    className="w-full bg-amber-600 text-white py-3 rounded-xl font-semibold text-sm hover:bg-amber-700 transition-colors"
+                    autoFocus
+                  >
+                    Confirm Full Credit
+                  </button>
                 </div>
               )}
-
-              <div className="bg-amber-50 p-4 rounded-xl">
-                <div className="text-sm text-gray-600">Due Amount</div>
-                <div className="text-2xl font-bold text-amber-700">
-                  {formatCurrency(creditType === "full" ? total : dueAmount)}
-                </div>
-              </div>
-
-              <button
-                ref={creditConfirmBtnRef}
-                onClick={handleCreditConfirm}
-                disabled={creditType === "split" && ((parseFloat(cashAmount) || 0) + (parseFloat(upiAmount) || 0)) === 0}
-                className="w-full bg-amber-600 text-white py-3 rounded-xl font-semibold text-sm hover:bg-amber-700 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-amber-400 focus:ring-offset-2"
-              >
-                {creditType === "full" ? "Confirm Full Credit" : "Confirm Split Payment"}
-              </button>
             </div>
           </div>
         </div>

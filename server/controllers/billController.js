@@ -51,6 +51,7 @@ exports.createBill = async (req, res) => {
       paymentMethod,
       paidAmount,
       dueAmount,
+      returnAmount,
       cashPaid,
       upiPaid,
       total,
@@ -63,7 +64,7 @@ exports.createBill = async (req, res) => {
       notes
     } = req.body;
 
-    console.log("Create bill payload: te4st", req.body);
+    console.log("Create bill payload:", req.body);
 
     // ✅ Validate companyId
     if (!companyId) {
@@ -100,6 +101,7 @@ exports.createBill = async (req, res) => {
 
         return {
           productId: item.productId,
+          productName: product.name,
           quantity: item.quantity,
           price: price,
           total: total
@@ -116,12 +118,50 @@ exports.createBill = async (req, res) => {
     const finalTotal = total
       ? roundToTwo(total)
       : roundToTwo(subtotal - finalDiscountAmount);
-    const finalPaidAmount = roundToTwo(paidAmount || 0);
+    
+    // Calculate return amount if not provided
+    const finalReturnAmount = returnAmount !== undefined
+      ? roundToTwo(returnAmount)
+      : finalPaidAmount > finalTotal ? roundToTwo(finalPaidAmount - finalTotal) : 0;
+    
+    // Calculate actual amounts after subtracting return
+    let finalPaidAmount = roundToTwo(paidAmount || 0);
+    let finalCashPaid = roundToTwo(cashPaid || 0);
+    let finalUpiPaid = roundToTwo(upiPaid || 0);
+    
+    // Subtract return amount from paid amounts
+    if (finalReturnAmount > 0) {
+      // Reduce total paid amount
+      finalPaidAmount = roundToTwo(finalPaidAmount - finalReturnAmount);
+      
+      // Reduce cash/upi based on payment method
+      if (paymentMethod === 'cash') {
+        finalCashPaid = roundToTwo(finalCashPaid - finalReturnAmount);
+      } 
+      else if (paymentMethod === 'upi') {
+        finalUpiPaid = roundToTwo(finalUpiPaid - finalReturnAmount);
+      }
+      else if (paymentMethod === 'credit') {
+        // For credit, subtract from cash first, then UPI if needed
+        if (finalCashPaid >= finalReturnAmount) {
+          finalCashPaid = roundToTwo(finalCashPaid - finalReturnAmount);
+        } else {
+          const remainingReturn = roundToTwo(finalReturnAmount - finalCashPaid);
+          finalCashPaid = 0;
+          finalUpiPaid = roundToTwo(finalUpiPaid - remainingReturn);
+        }
+      }
+    }
+    
+    // Ensure no negative values
+    finalPaidAmount = Math.max(0, finalPaidAmount);
+    finalCashPaid = Math.max(0, finalCashPaid);
+    finalUpiPaid = Math.max(0, finalUpiPaid);
+    
+    // Calculate due amount based on reduced paid amount
     const finalDueAmount = dueAmount !== undefined
       ? roundToTwo(dueAmount)
       : roundToTwo(finalTotal - finalPaidAmount);
-    const finalCashPaid = roundToTwo(cashPaid || 0);
-    const finalUpiPaid = roundToTwo(upiPaid || 0);
 
     // 👤 Customer - filter by company
     let customerDetails = {
@@ -148,8 +188,6 @@ exports.createBill = async (req, res) => {
     // 🔢 Generate Bill Number for this company
     const billNumber = await getNextBillNumber(companyId);
     
-    
-
     // 🧾 Create Bill with rounded values and companyId
     const bill = new Bill({
       companyId,
@@ -161,6 +199,7 @@ exports.createBill = async (req, res) => {
       total: finalTotal,
       paidAmount: finalPaidAmount,
       dueAmount: finalDueAmount,
+      returnAmount: finalReturnAmount,
       cashPaid: finalCashPaid,
       upiPaid: finalUpiPaid,
       paymentMethod: paymentMethod,
@@ -191,7 +230,13 @@ exports.createBill = async (req, res) => {
     res.status(201).json({
       success: true,
       message: "Bill created successfully",
-      bill
+      bill: {
+        ...bill.toObject(),
+        returnAmount: finalReturnAmount,
+        paidAmount: finalPaidAmount,
+        cashPaid: finalCashPaid,
+        upiPaid: finalUpiPaid
+      }
     });
 
   } catch (error) {
@@ -202,7 +247,6 @@ exports.createBill = async (req, res) => {
     });
   }
 };
-
 // ✅ UPDATE BILL (EDIT)
 exports.updateBill = async (req, res) => {
   try {
@@ -215,6 +259,7 @@ exports.updateBill = async (req, res) => {
       paymentMethod,
       paidAmount,
       dueAmount,
+      returnAmount,
       cashPaid,
       upiPaid,
       total,
@@ -237,7 +282,6 @@ exports.updateBill = async (req, res) => {
       });
     }
 
-
     console.log(`Updating bill with ID: ${id} for company: ${companyId}`);
 
     // Round incoming amounts
@@ -245,6 +289,7 @@ exports.updateBill = async (req, res) => {
     discountAmount = roundToTwo(discountAmount);
     paidAmount = roundToTwo(paidAmount);
     dueAmount = roundToTwo(dueAmount);
+    returnAmount = roundToTwo(returnAmount);
     cashPaid = roundToTwo(cashPaid);
     upiPaid = roundToTwo(upiPaid);
     total = roundToTwo(total);
@@ -292,7 +337,8 @@ exports.updateBill = async (req, res) => {
         const total = roundToTwo(price * item.quantity);
 
         return {
-          productId: item.productId,  
+          productId: item.productId,
+          productName: product.name,
           quantity: item.quantity,
           price: price,
           total: total
@@ -303,39 +349,58 @@ exports.updateBill = async (req, res) => {
     const subtotal = roundToTwo(billItems.reduce((sum, i) => sum + i.total, 0));
     const finalDiscountAmount = discountAmount || roundToTwo((subtotal * (discount || 0)) / 100);
     const finalTotal = total || roundToTwo(subtotal - finalDiscountAmount);
-
-    // ✅ Calculate new paid and due amounts
-    let finalPaidAmount = 0;
-    let finalDueAmount = 0;
+    
+    // Calculate return amount if not provided
+    const finalReturnAmount = returnAmount !== undefined
+      ? roundToTwo(returnAmount)
+      : paidAmount > finalTotal ? roundToTwo(paidAmount - finalTotal) : 0;
+    
+    // Calculate actual amounts after subtracting return
+    let finalPaidAmount = roundToTwo(paidAmount || 0);
     let finalCashPaid = roundToTwo(cashPaid || 0);
     let finalUpiPaid = roundToTwo(upiPaid || 0);
-
-    // Get existing payment history total
-    const existingPaymentHistoryTotal = (existingBill.paymentHistory || []).reduce((sum, p) => sum + p.amount, 0);
-
-    if (paymentMethod === 'credit') {
-      // For credit, paid amount is what's paid now plus existing payment history
-      finalPaidAmount = roundToTwo((paidAmount || 0));
-      finalDueAmount = roundToTwo(finalTotal - finalPaidAmount);
-    } else if (paymentMethod === 'cash') {
-      finalPaidAmount = finalTotal;
-      finalDueAmount = 0;
-      finalCashPaid = finalTotal;
-      if (finalCashPaid < 0) finalCashPaid = 0;
-    } else if (paymentMethod === 'upi') {
-      finalPaidAmount = finalTotal;
-      finalDueAmount = 0;
-      finalUpiPaid = finalTotal;
-      if (finalUpiPaid < 0) finalUpiPaid = 0;
-    } else if (paymentMethod === 'mixed') {
-      finalPaidAmount = roundToTwo(finalCashPaid + finalUpiPaid);
-      finalDueAmount = roundToTwo(finalTotal - finalPaidAmount);
+    
+    // Subtract return amount from paid amounts
+    if (finalReturnAmount > 0) {
+      // Reduce total paid amount
+      finalPaidAmount = roundToTwo(finalPaidAmount - finalReturnAmount);
+      
+      // Reduce cash/upi based on payment method
+      if (paymentMethod === 'cash') {
+        finalCashPaid = roundToTwo(finalCashPaid - finalReturnAmount);
+      } 
+      else if (paymentMethod === 'upi') {
+        finalUpiPaid = roundToTwo(finalUpiPaid - finalReturnAmount);
+      }
+      else if (paymentMethod === 'credit') {
+        // For credit, subtract from cash first, then UPI if needed
+        if (finalCashPaid >= finalReturnAmount) {
+          finalCashPaid = roundToTwo(finalCashPaid - finalReturnAmount);
+        } else {
+          const remainingReturn = roundToTwo(finalReturnAmount - finalCashPaid);
+          finalCashPaid = 0;
+          finalUpiPaid = roundToTwo(finalUpiPaid - remainingReturn);
+        }
+      }
     }
-
+    
+    // Ensure no negative values
+    finalPaidAmount = Math.max(0, finalPaidAmount);
+    finalCashPaid = Math.max(0, finalCashPaid);
+    finalUpiPaid = Math.max(0, finalUpiPaid);
+    
+    // Calculate due amount based on reduced paid amount
+    let finalDueAmount = dueAmount !== undefined
+      ? roundToTwo(dueAmount)
+      : roundToTwo(finalTotal - finalPaidAmount);
+    
     // Ensure due amount is not negative
     finalDueAmount = Math.max(0, finalDueAmount);
 
-    console.log(`Update Payment Summary - Method: ${paymentMethod}, Paid: ${finalPaidAmount}, Due: ${finalDueAmount}`);
+    // Get existing payment history total (if you have payment history)
+    const existingPaymentHistoryTotal = (existingBill.paymentHistory || []).reduce((sum, p) => sum + p.amount, 0);
+
+    console.log(`Update Payment Summary - Method: ${paymentMethod}, Paid: ${finalPaidAmount}, Due: ${finalDueAmount}, Return: ${finalReturnAmount}`);
 
     // 👤 Customer - filter by company
     let customerDetails = {
@@ -383,7 +448,7 @@ exports.updateBill = async (req, res) => {
     }
 
     // Update customer due (adjust the difference)
-    const oldDueAmount = existingBill.dueAmount;
+    const oldDueAmount = existingBill.dueAmount || 0;
     if (customerId && finalDueAmount !== oldDueAmount) {
       const dueDifference = finalDueAmount - oldDueAmount;
       await Customer.findOneAndUpdate(
@@ -403,6 +468,7 @@ exports.updateBill = async (req, res) => {
         total: finalTotal,
         paidAmount: finalPaidAmount,
         dueAmount: finalDueAmount,
+        returnAmount: finalReturnAmount,
         cashPaid: finalCashPaid,
         upiPaid: finalUpiPaid,
         paymentMethod,
@@ -429,6 +495,9 @@ exports.updateBill = async (req, res) => {
     });
   }
 };
+
+
+
 // ✅ DELETE BILL
 exports.deleteBill = async (req, res) => {
   try {
@@ -589,8 +658,8 @@ exports.getBillById = async (req, res) => {
       billNumber: bill.billNumber,
       items: bill.items.map(item => ({
         productId: item.productId._id,
-        productName: item.name,
-        name: item.name,
+        // productName: item.name,
+        // name: item.name,
         quantity: item.quantity,
         price: roundToTwo(item.price),
         total: roundToTwo(item.total)
@@ -601,6 +670,7 @@ exports.getBillById = async (req, res) => {
       paidAmount: roundToTwo(bill.paidAmount),
       dueAmount: roundToTwo(bill.dueAmount),
       cashPaid: roundToTwo(bill.cashPaid),
+      returnAmount: roundToTwo(bill.returnAmount),
       upiPaid: roundToTwo(bill.upiPaid),
       total: roundToTwo(bill.total),
       customerId: bill.customer.customerId?._id || null,

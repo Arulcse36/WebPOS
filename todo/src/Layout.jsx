@@ -252,6 +252,32 @@ const MastersMenu = ({ open, toggle, onNavigate, isSuperAdmin, userRole }) => (
   </div>
 );
 
+// ─── Admin Tools Menu (Only for Super Admin) ────────────────────────────────
+const AdminToolsMenu = ({ open, toggle, onNavigate, isSuperAdmin }) => {
+  if (!isSuperAdmin) return null;
+  
+  return (
+    <div>
+      <button onClick={toggle} className={toggleBtnClass}>
+        <span className="flex items-center gap-3">🔧 Admin Tools</span>
+        <span className="text-xs text-slate-500 transition-transform duration-200"
+          style={{ transform: open ? "rotate(180deg)" : "rotate(0deg)" }}>▼</span>
+      </button>
+
+      <div
+        className="overflow-hidden transition-all duration-200"
+        style={{ maxHeight: open ? "200px" : "0px" }}
+      >
+        <div className="ml-4 mt-1 flex flex-col gap-1 pb-1">
+          <NavLink to="/seed-database" className={({ isActive }) => subItemClass(isActive)} onClick={onNavigate}>
+            🌾 Seed Database
+          </NavLink>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 // ─── Sidebar content with conditional rendering ──────────────────────────────
 const SidebarContent = ({ 
   openProducts, 
@@ -259,7 +285,9 @@ const SidebarContent = ({
   openReports, 
   setOpenReports, 
   openMasters, 
-  setOpenMasters, 
+  setOpenMasters,
+  openAdminTools,
+  setOpenAdminTools,
   closeSidebar, 
   isSuperAdmin, 
   userRole 
@@ -268,6 +296,7 @@ const SidebarContent = ({
     setOpenProducts(false);
     setOpenReports(false);
     setOpenMasters(false);
+    setOpenAdminTools(false);
     closeSidebar();
   };
 
@@ -323,6 +352,14 @@ const SidebarContent = ({
         toggle={() => setOpenReports((p) => !p)}
         onNavigate={closeSidebar}
       />
+
+      {/* Admin Tools - Only for Super Admin */}
+      <AdminToolsMenu
+        open={openAdminTools}
+        toggle={() => setOpenAdminTools((p) => !p)}
+        onNavigate={closeSidebar}
+        isSuperAdmin={isSuperAdmin}
+      />
     </nav>
   );
 };
@@ -338,6 +375,7 @@ const Layout = ({ onLogout, user, isSuperAdmin }) => {
   const [openProducts, setOpenProducts] = useState(false);
   const [openReports, setOpenReports] = useState(false);
   const [openMasters, setOpenMasters] = useState(false);
+  const [openAdminTools, setOpenAdminTools] = useState(false);
   const [openSidebar, setOpenSidebar] = useState(false);
   
   const userRole = localStorage.getItem("userType") || user?.role || "user";
@@ -391,6 +429,7 @@ const Layout = ({ onLogout, user, isSuperAdmin }) => {
             setOpenProducts(false); 
             setOpenReports(false); 
             setOpenMasters(false);
+            setOpenAdminTools(false);
             setOpenSidebar(false); 
           }}
           className="font-bold text-lg tracking-wide active:opacity-70 transition-opacity"
@@ -490,6 +529,8 @@ const Layout = ({ onLogout, user, isSuperAdmin }) => {
               setOpenReports={setOpenReports}
               openMasters={openMasters}
               setOpenMasters={setOpenMasters}
+              openAdminTools={openAdminTools}
+              setOpenAdminTools={setOpenAdminTools}
               closeSidebar={closeSidebar}
               isSuperAdmin={isSuperAdmin}
               userRole={userRole}

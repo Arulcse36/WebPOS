@@ -93,6 +93,13 @@ app.use('/payment-reports', paymentReportRoutes);
 const expenseTransactionRoutes = require('./routes/expenseTransactionRoutes');
 app.use('/expense-transactions', expenseTransactionRoutes);
 
+
+// backend/server.js or app.js
+const seedRoutes = require('./routes/seedRoutes');
+
+// Add this after other middleware
+app.use('/', seedRoutes);
+
 // Server start
 const PORT = process.env.PORT || 5000;
 

@@ -13,10 +13,7 @@ router.post("/", async (req, res) => {
             address
         } = req.body;
 
-        console.log("Create customer request:", req.body);
-
-        console.log("Create customer request:", req.companyId);
-
+        console.log("Create customer request test:", req.body);
 
         if (!companyId) {
             return res.status(400).json({ error: "Company ID required" });
@@ -26,36 +23,84 @@ router.post("/", async (req, res) => {
             return res.status(400).json({ error: "Name & Phone required" });
         }
 
-        // Check if customer with same phone exists for this company
-        const existingPhone = await Customer.findOne({ companyId, phone });
-        if (existingPhone) {
-            return res.status(400).json({ error: "Phone number already exists for this company" });
+        // Clean and prepare data
+        const cleanedPhone = phone.toString().trim();
+        const cleanedName = name.toString().trim();
+        
+        // IMPORTANT: Convert empty/undefined email to null (not undefined)
+        let cleanedEmail = null;
+        if (email && typeof email === 'string' && email.trim() !== '') {
+            cleanedEmail = email.trim().toLowerCase();
+        }
+        
+        let cleanedAddress = null;
+        if (address && typeof address === 'string' && address.trim() !== '') {
+            cleanedAddress = address.trim();
         }
 
-        // Check if customer with same email exists for this company
-        if (email) {
-            const existingEmail = await Customer.findOne({ companyId, email });
+        // Check if customer with same phone exists for this company
+        const existingPhone = await Customer.findOne({ 
+            companyId, 
+            phone: cleanedPhone 
+        });
+        
+        if (existingPhone) {
+            return res.status(400).json({ 
+                error: "Phone number already exists for this company" 
+            });
+        }
+
+        // Only check email if it's provided (not null)
+        if (cleanedEmail) {
+            const existingEmail = await Customer.findOne({ 
+                companyId, 
+                email: cleanedEmail 
+            });
             if (existingEmail) {
-                return res.status(400).json({ error: "Email already exists for this company" });
+                return res.status(400).json({ 
+                    error: "Email already exists for this company" 
+                });
             }
         }
 
-        const customer = new Customer({
+        // Create customer object - explicitly set email to null if not provided
+        const customerData = {
             companyId,
-            name,
-            phone,
-            email,
-            address
-        });
+            name: cleanedName,
+            phone: cleanedPhone,
+            email: cleanedEmail,  // This will be null, not undefined
+            address: cleanedAddress
+        };
 
+        const customer = new Customer(customerData);
         await customer.save();
-        res.json(customer);
+        
+        // Return the saved customer
+        res.status(201).json(customer);
 
     } catch (err) {
+        console.error("Create customer error:", err);
+        
         if (err.code === 11000) {
-            return res.status(400).json({ error: "Duplicate entry" });
+            // Handle duplicate key error
+            if (err.keyPattern?.email) {
+                return res.status(400).json({ 
+                    error: "Email already exists for this company" 
+                });
+            }
+            if (err.keyPattern?.phone) {
+                return res.status(400).json({ 
+                    error: "Phone number already exists for this company" 
+                });
+            }
+            return res.status(400).json({ 
+                error: "Duplicate entry - customer already exists" 
+            });
         }
-        res.status(500).json({ error: err.message });
+        
+        res.status(500).json({ 
+            error: err.message || "Internal server error" 
+        });
     }
 });
 

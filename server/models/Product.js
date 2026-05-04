@@ -72,6 +72,8 @@ const ProductSchema = new mongoose.Schema({
 // This allows different companies to have the same product code,
 // but prevents duplicates within the same company
 ProductSchema.index({ companyId: 1, productCode: 1 }, { unique: true });
+// ✅ Add compound unique index for name per company
+ProductSchema.index({ companyId: 1, name: 1 }, { unique: true });
 
 // Additional indexes for better query performance
 ProductSchema.index({ companyId: 1, isActive: 1 });
