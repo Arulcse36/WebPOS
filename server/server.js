@@ -17,7 +17,7 @@ const reportRoutes = require("./routes/reportRoutes");
 const expenseMasterRoutes = require("./routes/expenseMasterRoutes");
 const paymentReportRoutes = require("./routes/paymentReportRoutes");
 const expenseTransactionRoutes = require("./routes/expenseTransactionRoutes");
-const seedRoutes = require("./routes/seedRoutes");
+const seedRoutes = require("./routes/seedGrocessoryRoutes");
 
 // ==================== MODEL IMPORTS ====================
 const Invoice = require("./models/Invoice");

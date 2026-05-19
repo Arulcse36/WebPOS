@@ -7,6 +7,7 @@ const API = `${import.meta.env.VITE_API_URL}`;
 const SeedDatabase = () => {
     const [companies, setCompanies] = useState([]);
     const [selectedCompany, setSelectedCompany] = useState("");
+    const [seedType, setSeedType] = useState("grocery"); // "grocery" or "hardware"
     const [seeding, setSeeding] = useState(false);
     const [seedResult, setSeedResult] = useState(null);
     const [error, setError] = useState(null);
@@ -80,6 +81,54 @@ const SeedDatabase = () => {
         }
     };
 
+    const getSeedDetails = () => {
+        if (seedType === "grocery") {
+            return {
+                name: "Grocery Shop",
+                icon: "🛒",
+                brands: 50,
+                categories: 25,
+                products: 500,
+                description: "Complete grocery dataset for Tamil Nadu retail stores",
+                items: [
+                    "Rice & Grains (Ponni, Sona Masoori, Basmati, Brown Rice)",
+                    "Dals & Pulses (Toor, Moong, Masoor, Urad, Chana)",
+                    "Spices (Turmeric, Chilli, Coriander, Cumin, Masalas)",
+                    "Oils & Ghee (Sunflower, Coconut, Groundnut, Ghee)",
+                    "Snacks & Namkeen (Lays, Kurkure, Haldiram's, Mixture)",
+                    "Biscuits & Cookies (Parle-G, Oreo, Good Day, Marie Gold)",
+                    "Noodles & Pasta (Maggi, Top Ramen, Yippee)",
+                    "Beverages (Coke, Pepsi, Juices, Tea, Coffee)",
+                    "Dairy Products (Milk, Curd, Paneer, Butter, Cheese)",
+                    "Personal Care (Soaps, Shampoos, Toothpaste)",
+                    "Stationery & Household Items"
+                ]
+            };
+        } else {
+            return {
+                name: "Hardware Shop",
+                icon: "🔨",
+                brands: 35,
+                categories: 22,
+                products: 110,
+                description: "Complete hardware and construction materials for Tamil Nadu",
+                items: [
+                    "Cement & Construction (UltraTech, ACC, Ambuja, Ramco)",
+                    "Steel & TMT Bars (JSW, Tata Steel, SAIL)",
+                    "Paints & Coatings (Asian Paints, Berger, Nerolac)",
+                    "Sanitary & Plumbing (Jaquar, Hindware, Cera, Parryware)",
+                    "Tiles & Flooring (Kajaria, Johnson, Somany)",
+                    "Electrical (Wires, Cables, Switches, Sockets)",
+                    "Fans & Lighting (Orient, Havells, Crompton, Bajaj)",
+                    "Tools & Hardware (Taparia, Stanley, Bosch)",
+                    "PVC Pipes & Fittings (Finolex)",
+                    "Nails, Fasteners, Locks & Handles",
+                    "Safety Equipment & Water Tanks"
+                ]
+            };
+        }
+    };
+
     const handleSeedDatabase = async () => {
         if (!selectedCompany) {
             setError("Please select a company");
@@ -87,10 +136,12 @@ const SeedDatabase = () => {
         }
 
         const selectedCompanyData = companies.find(c => c._id === selectedCompany);
+        const seedDetails = getSeedDetails();
         
-        // Create detailed confirmation message with existing data counts
+        // Create detailed confirmation message
         const confirmationMessage = 
-            `⚠️ WARNING: This will OVERRIDE ALL existing grocery data for "${selectedCompanyData?.companyName}"!\n\n` +
+            `⚠️ WARNING: This will OVERRIDE ALL existing data for "${selectedCompanyData?.companyName}"!\n\n` +
+            `Seed Type: ${seedDetails.name} ${seedDetails.icon}\n\n` +
             `Current Data:\n` +
             `📊 ${existingData.brands.length} Brand(s)\n` +
             `📂 ${existingData.categories.length} Categorie(s)\n` +
@@ -100,9 +151,9 @@ const SeedDatabase = () => {
             `• DELETE all ${existingData.categories.length} existing categorie(s)\n` +
             `• DELETE all ${existingData.products.length} existing product(s)\n\n` +
             `Then it will ADD:\n` +
-            `• 25+ New Brands\n` +
-            `• 18+ New Categories\n` +
-            `• 25+ New Products with variants\n\n` +
+            `• ${seedDetails.brands}+ New Brands\n` +
+            `• ${seedDetails.categories}+ New Categories\n` +
+            `• ${seedDetails.products}+ New Products with variants\n\n` +
             `⚠️ This action CANNOT be undone!\n\n` +
             `Are you ABSOLUTELY sure you want to continue?`;
         
@@ -116,13 +167,15 @@ const SeedDatabase = () => {
 
         try {
             const res = await axios.post(`${API}/seed-database`, {
-                companyId: selectedCompany
+                companyId: selectedCompany,
+                seedType: seedType // Send seed type to backend
             });
 
             setSeedResult({
                 success: true,
                 message: res.data.message,
-                data: res.data.data
+                data: res.data.data,
+                seedType: seedType
             });
             
             // Refresh existing data after seeding
@@ -134,12 +187,15 @@ const SeedDatabase = () => {
             setError(errorMessage);
             setSeedResult({
                 success: false,
-                message: errorMessage
+                message: errorMessage,
+                seedType: seedType
             });
         } finally {
             setSeeding(false);
         }
     };
+
+    const seedDetails = getSeedDetails();
 
     return (
         <div className="min-h-screen w-full bg-gradient-to-br from-gray-50 to-gray-100 p-6">
@@ -149,22 +205,71 @@ const SeedDatabase = () => {
                     <h1 className="text-3xl font-bold text-gray-900 flex items-center gap-3">
                         🌾 Database Seeder
                     </h1>
-                    <p className="text-gray-600 mt-2">Populate your database with sample grocery data</p>
+                    <p className="text-gray-600 mt-2">Populate your database with sample data for your business type</p>
                 </div>
 
                 {/* Main Seeding Card */}
                 <div className="bg-white rounded-2xl shadow-lg overflow-hidden mb-8">
-                    <div className="bg-gradient-to-r from-green-600 to-teal-700 px-6 py-4">
+                    <div className={`px-6 py-4 ${
+                        seedType === "grocery" 
+                            ? "bg-gradient-to-r from-green-600 to-teal-700" 
+                            : "bg-gradient-to-r from-orange-600 to-red-700"
+                    }`}>
                         <h2 className="text-xl font-semibold text-white flex items-center gap-2">
-                            🚀 Seed Grocery Database
+                            {seedDetails.icon} Seed {seedDetails.name} Database
                         </h2>
-                        <p className="text-green-100 text-sm mt-1">
-                            Populate with pre-configured products, brands, categories, and UOMs
+                        <p className="text-white text-sm mt-1 opacity-90">
+                            {seedDetails.description}
                         </p>
                     </div>
                     
                     <div className="p-6 md:p-8">
                         <div className="grid grid-cols-1 gap-6">
+                            {/* Business Type Selection */}
+                            <div>
+                                <label className="block text-sm font-medium mb-2 text-gray-900">
+                                    Business Type <span className="text-red-500">*</span>
+                                </label>
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    <button
+                                        onClick={() => setSeedType("grocery")}
+                                        className={`p-4 rounded-xl border-2 transition-all ${
+                                            seedType === "grocery"
+                                                ? "border-green-500 bg-green-50 shadow-md"
+                                                : "border-gray-200 hover:border-green-300"
+                                        }`}
+                                    >
+                                        <div className="flex items-center gap-3">
+                                            <span className="text-3xl">🛒</span>
+                                            <div className="text-left">
+                                                <div className="font-semibold text-gray-900">Grocery Shop</div>
+                                                <div className="text-xs text-gray-500">Supermarket, Kirana Store</div>
+                                            </div>
+                                        </div>
+                                    </button>
+                                    
+                                    <button
+                                        onClick={() => setSeedType("hardware")}
+                                        className={`p-4 rounded-xl border-2 transition-all ${
+                                            seedType === "hardware"
+                                                ? "border-orange-500 bg-orange-50 shadow-md"
+                                                : "border-gray-200 hover:border-orange-300"
+                                        }`}
+                                    >
+                                        <div className="flex items-center gap-3">
+                                            <span className="text-3xl">🔨</span>
+                                            <div className="text-left">
+                                                <div className="font-semibold text-gray-900">Hardware Shop</div>
+                                                <div className="text-xs text-gray-500">Construction, Tools, Materials</div>
+                                            </div>
+                                        </div>
+                                    </button>
+                                </div>
+                                <p className="text-xs text-gray-500 mt-2">
+                                    Select the type of business to seed appropriate products, brands, and categories
+                                </p>
+                            </div>
+
                             {/* Company Selection */}
                             <div>
                                 <label className="block text-sm font-medium mb-1 text-gray-900">
@@ -335,7 +440,7 @@ const SeedDatabase = () => {
                                             <h3 className="text-sm font-medium text-red-800">Data Override Warning</h3>
                                             <p className="text-xs text-red-700 mt-1">
                                                 This company already has {existingData.brands.length} brand(s), {existingData.categories.length} categorie(s), and {existingData.products.length} product(s).
-                                                Seeding will DELETE all this data and replace it with sample data!
+                                                Seeding will DELETE all this data and replace it with {seedDetails.name.toLowerCase()} data!
                                             </p>
                                         </div>
                                     </div>
@@ -350,16 +455,20 @@ const SeedDatabase = () => {
                                 className={`px-8 py-3 rounded-xl font-semibold transition-all shadow-md disabled:opacity-50 disabled:cursor-not-allowed ${
                                     existingData.products.length > 0
                                         ? 'bg-red-600 hover:bg-red-700 text-white'
-                                        : 'bg-gradient-to-r from-green-600 to-teal-600 hover:from-green-700 hover:to-teal-700 text-white'
+                                        : seedType === "grocery"
+                                            ? 'bg-gradient-to-r from-green-600 to-teal-600 hover:from-green-700 hover:to-teal-700 text-white'
+                                            : 'bg-gradient-to-r from-orange-600 to-red-600 hover:from-orange-700 hover:to-red-700 text-white'
                                 }`}
                             >
                                 {seeding ? (
                                     <span className="flex items-center gap-2">
                                         <span className="inline-block animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent"></span>
-                                        Seeding Database...
+                                        Seeding {seedDetails.name} Database...
                                     </span>
                                 ) : (
-                                    existingData.products.length > 0 ? "⚠️ Override Existing Data" : "🚀 Start Seeding"
+                                    existingData.products.length > 0 
+                                        ? `⚠️ Override with ${seedDetails.name} Data` 
+                                        : `${seedDetails.icon} Seed ${seedDetails.name} Database`
                                 )}
                             </button>
                         </div>
@@ -392,7 +501,7 @@ const SeedDatabase = () => {
                                         </h3>
                                         <div className="mt-3">
                                             <h4 className="text-sm font-semibold text-green-900 mb-2">
-                                                Seeding Summary for {seedResult.data.companyName}:
+                                                Seeding Summary for {seedResult.data.companyName} ({seedResult.seedType === "grocery" ? "Grocery" : "Hardware"} Shop):
                                             </h4>
                                             <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
                                                 <div className="bg-green-100 p-3 rounded-lg">
@@ -443,10 +552,10 @@ const SeedDatabase = () => {
                 <div className="bg-white rounded-2xl shadow-lg overflow-hidden">
                     <div className="bg-gradient-to-r from-gray-700 to-gray-800 px-6 py-4">
                         <h2 className="text-xl font-semibold text-white flex items-center gap-2">
-                            📋 What Will Be Seeded?
+                            {seedDetails.icon} {seedDetails.name} Shop Data Overview
                         </h2>
                         <p className="text-gray-300 text-sm mt-1">
-                            Complete grocery dataset for Tamil Nadu retail stores
+                            {seedDetails.description}
                         </p>
                     </div>
                     
@@ -455,16 +564,29 @@ const SeedDatabase = () => {
                             <div>
                                 <div className="flex items-center gap-2 mb-3">
                                     <span className="text-xl">🏷️</span>
-                                    <h3 className="font-semibold text-gray-900">Popular Brands (25+)</h3>
+                                    <h3 className="font-semibold text-gray-900">Brands ({seedDetails.brands}+)</h3>
                                 </div>
                                 <div className="bg-gray-50 p-4 rounded-lg">
                                     <div className="flex flex-wrap gap-2">
-                                        {["MTR", "Aashirvaad", "Britannia", "Parle", "Amul", "Patanjali", "Maggi", "MDH", "Everest", "Fortune", "Dabur", "Haldiram's"].map(brand => (
-                                            <span key={brand} className="inline-block bg-white px-2 py-1 rounded text-xs text-gray-700 border border-gray-200">
-                                                {brand}
-                                            </span>
-                                        ))}
-                                        <span className="inline-block bg-gray-200 px-2 py-1 rounded text-xs text-gray-600">+13 more</span>
+                                        {seedType === "grocery" ? (
+                                            <>
+                                                {["MTR", "Aashirvaad", "Britannia", "Parle", "Amul", "Patanjali", "Maggi", "MDH", "Everest", "Fortune", "Dabur", "Haldiram's", "Lay's", "Kissan", "Taj"].map(brand => (
+                                                    <span key={brand} className="inline-block bg-white px-2 py-1 rounded text-xs text-gray-700 border border-gray-200">
+                                                        {brand}
+                                                    </span>
+                                                ))}
+                                                <span className="inline-block bg-gray-200 px-2 py-1 rounded text-xs text-gray-600">+35 more</span>
+                                            </>
+                                        ) : (
+                                            <>
+                                                {["Asian Paints", "UltraTech Cement", "JSW Steel", "Jaquar", "Kajaria", "Havells", "Finolex", "Anchor", "Taparia", "Bosch", "Pidilite", "Orient", "Crompton", "Legrand"].map(brand => (
+                                                    <span key={brand} className="inline-block bg-white px-2 py-1 rounded text-xs text-gray-700 border border-gray-200">
+                                                        {brand}
+                                                    </span>
+                                                ))}
+                                                <span className="inline-block bg-gray-200 px-2 py-1 rounded text-xs text-gray-600">+20 more</span>
+                                            </>
+                                        )}
                                     </div>
                                 </div>
                             </div>
@@ -472,53 +594,34 @@ const SeedDatabase = () => {
                             <div>
                                 <div className="flex items-center gap-2 mb-3">
                                     <span className="text-xl">📂</span>
-                                    <h3 className="font-semibold text-gray-900">Categories (18+)</h3>
+                                    <h3 className="font-semibold text-gray-900">Categories ({seedDetails.categories}+)</h3>
                                 </div>
                                 <div className="bg-gray-50 p-4 rounded-lg">
                                     <div className="flex flex-wrap gap-2">
-                                        {["Rice & Grains", "Spices", "Dairy Products", "Beverages", "Snacks", "Oils", "Flours", "Personal Care"].map(cat => (
-                                            <span key={cat} className="inline-block bg-white px-2 py-1 rounded text-xs text-gray-700 border border-gray-200">
-                                                {cat}
+                                        {seedDetails.items.slice(0, 8).map(item => (
+                                            <span key={item} className="inline-block bg-white px-2 py-1 rounded text-xs text-gray-700 border border-gray-200">
+                                                {item.length > 30 ? item.substring(0, 30) + "..." : item}
                                             </span>
                                         ))}
-                                        <span className="inline-block bg-gray-200 px-2 py-1 rounded text-xs text-gray-600">+10 more</span>
+                                        <span className="inline-block bg-gray-200 px-2 py-1 rounded text-xs text-gray-600">+{seedDetails.categories - 8} more</span>
                                     </div>
                                 </div>
                             </div>
+                        </div>
 
-                            <div>
-                                <div className="flex items-center gap-2 mb-3">
-                                    <span className="text-xl">🛒</span>
-                                    <h3 className="font-semibold text-gray-900">Sample Products</h3>
-                                </div>
-                                <div className="bg-gray-50 p-4 rounded-lg">
-                                    <ul className="space-y-1 text-sm text-gray-700">
-                                        <li>• Raw Rice - Ponni (1kg, 5kg, 10kg variants)</li>
-                                        <li>• Wheat Flour - Aashirvaad (1kg, 5kg)</li>
-                                        <li>• Turmeric Powder (100g, 200g packs)</li>
-                                        <li>• Sunflower Oil (1L, 2L, 5L bottles)</li>
-                                        <li>• Parle-G Biscuits (50g, 100g, 500g packs)</li>
-                                        <li>• Maggi Noodles (70g, 140g packs)</li>
-                                        <li>• Amul Milk, Curd, Paneer, Butter</li>
-                                        <li>• Coca-Cola, Pepsi, Sprite beverages</li>
-                                    </ul>
-                                </div>
+                        <div className="mt-6">
+                            <div className="flex items-center gap-2 mb-3">
+                                <span className="text-xl">📋</span>
+                                <h3 className="font-semibold text-gray-900">What's Included</h3>
                             </div>
-
-                            <div>
-                                <div className="flex items-center gap-2 mb-3">
-                                    <span className="text-xl">📏</span>
-                                    <h3 className="font-semibold text-gray-900">Units of Measurement</h3>
-                                </div>
-                                <div className="bg-gray-50 p-4 rounded-lg">
-                                    <div className="flex flex-wrap gap-2">
-                                        {["Kg", "Gram", "Liter", "Ml", "Piece", "Pack", "Dozen", "Box", "Bottle", "Packet", "Bag", "Tin"].map(uom => (
-                                            <span key={uom} className="inline-block bg-white px-2 py-1 rounded text-xs text-gray-700 border border-gray-200">
-                                                {uom}
-                                            </span>
-                                        ))}
-                                    </div>
-                                </div>
+                            <div className="bg-gray-50 p-4 rounded-lg">
+                                <ul className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                                    {seedDetails.items.map((item, index) => (
+                                        <li key={index} className="text-sm text-gray-700 flex items-center gap-2">
+                                            <span className="text-green-600">✓</span> {item}
+                                        </li>
+                                    ))}
+                                </ul>
                             </div>
                         </div>
 
@@ -529,15 +632,17 @@ const SeedDatabase = () => {
                                     <p className="text-sm text-blue-900 font-medium">Tamil Language Support</p>
                                     <p className="text-xs text-blue-700 mt-1">
                                         All products include Tamil names for better accessibility in Tamil Nadu stores.
-                                        Example: "பொன்னி அரிசி", "கோதுமை மாவு", "மஞ்சள் தூள்"
+                                        {seedType === "grocery" 
+                                            ? " Example: 'பொன்னி அரிசி', 'கோதுமை மாவு', 'மஞ்சள் தூள்'"
+                                            : " Example: 'சிமென்ட்', 'பெயிண்ட்', 'பைப்'"}
                                     </p>
                                 </div>
                             </div>
                         </div>
 
                         <div className="mt-4 text-center text-xs text-gray-500 pt-4 border-t border-gray-200">
-                            <p>✅ This will create 25+ products with multiple variants, 25+ brands, 18+ categories, and 12+ UOMs</p>
-                            <p className="mt-1">📊 Perfect for getting started with grocery business in Tamil Nadu</p>
+                            <p>✅ This will create {seedDetails.products}+ products with variants, {seedDetails.brands}+ brands, {seedDetails.categories}+ categories</p>
+                            <p className="mt-1">📊 Perfect for getting started with {seedDetails.name.toLowerCase()} business in Tamil Nadu</p>
                         </div>
                     </div>
                 </div>
