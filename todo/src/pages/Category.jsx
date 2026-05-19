@@ -1,92 +1,135 @@
-// frontend/src/components/SeedDatabase.jsx
 import { useState, useEffect } from "react";
 import axios from "axios";
 
-const API = `${import.meta.env.VITE_API_URL}`;
+const API = `${import.meta.env.VITE_API_URL}/categories`;
 
-const SeedDatabase = () => {
-    const [companies, setCompanies] = useState([]);
-    const [selectedCompany, setSelectedCompany] = useState("");
-    const [seeding, setSeeding] = useState(false);
-    const [seedResult, setSeedResult] = useState(null);
-    const [error, setError] = useState(null);
-    const [loadingCompanies, setLoadingCompanies] = useState(false);
+const Category = () => {
+    const [name, setName] = useState("");
+    const [list, setList] = useState([]);
+    const [editId, setEditId] = useState(null);
+    const [loading, setLoading] = useState(false);
+    const [showInactive, setShowInactive] = useState(false);
     
-    // Get companyId from localStorage (for authentication check)
+    // Get companyId from localStorage
     const companyId = localStorage.getItem("companyId");
 
     useEffect(() => {
-        fetchCompanies();
-    }, []);
-
-    const fetchCompanies = async () => {
-        setLoadingCompanies(true);
-        try {
-            const res = await axios.get(`${API}/companies`);
-            setCompanies(res.data);
-        } catch (error) {
-            console.error("Error loading companies:", error);
-            setError("Failed to load companies");
-        } finally {
-            setLoadingCompanies(false);
+        if (companyId) {
+            loadData();
         }
-    };
+    }, [companyId]);
 
-    const handleSeedDatabase = async () => {
-        if (!selectedCompany) {
-            setError("Please select a company");
+    const loadData = async () => {
+        if (!companyId) {
+            console.error("No company ID found");
             return;
         }
-
-        const selectedCompanyData = companies.find(c => c._id === selectedCompany);
         
-        // Confirmation dialog
-        if (!window.confirm(
-            `⚠️ WARNING: This will clear ALL existing grocery data for "${selectedCompanyData?.companyName}" and replace it with sample data.\n\n` +
-            `This includes:\n` +
-            `• All existing brands\n` +
-            `• All existing categories\n` +
-            `• All existing products\n\n` +
-            `Are you sure you want to continue?`
-        )) {
-            return;
-        }
-
-        setSeeding(true);
-        setSeedResult(null);
-        setError(null);
-
+        setLoading(true);
         try {
-            const res = await axios.post(`${API}/seed-database`, {
-                companyId: selectedCompany
-            });
-
-            setSeedResult({
-                success: true,
-                message: res.data.message,
-                data: res.data.data
-            });
+            const res = await axios.get(`${API}?companyId=${companyId}`);
+            setList(res.data);
         } catch (error) {
-            console.error("Error seeding database:", error);
-            const errorMessage = error.response?.data?.error || "Failed to seed database";
-            setError(errorMessage);
-            setSeedResult({
-                success: false,
-                message: errorMessage
-            });
+            console.error("Error loading categories:", error);
+            alert("Failed to load categories");
         } finally {
-            setSeeding(false);
+            setLoading(false);
         }
     };
 
-    // Show loading or redirect if no company (authentication check)
+    const saveCategory = async () => {
+        if (!name) {
+            alert("Please enter category name");
+            return;
+        }
+        
+        if (!companyId) {
+            alert("No company associated. Please login again.");
+            return;
+        }
+
+        setLoading(true);
+        try {
+            const categoryData = {
+                name,
+                companyId
+            };
+
+            if (editId) {
+                const res = await axios.put(`${API}/${editId}?companyId=${companyId}`, categoryData);
+                setList(list.map(x => x._id === editId ? res.data : x));
+                setEditId(null);
+            } else {
+                const res = await axios.post(API, categoryData);
+                setList([res.data, ...list]);
+            }
+            setName("");
+        } catch (error) {
+            console.error("Error saving category:", error);
+            alert(error.response?.data?.message || "Error saving category");
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const editItem = (item) => {
+        setName(item.name);
+        setEditId(item._id);
+    };
+
+    const deleteItem = async (id) => {
+        if (!window.confirm("Delete this category? This may affect products linked to it.")) return;
+        
+        if (!companyId) return;
+        
+        setLoading(true);
+        try {
+            await axios.delete(`${API}/${id}?companyId=${companyId}`);
+            setList(list.filter(x => x._id !== id));
+            alert("Category deleted successfully!");
+        } catch (error) {
+            console.error("Error deleting category:", error);
+            alert(error.response?.data?.message || "Failed to delete category");
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const toggleStatus = async (item) => {
+        if (!companyId) return;
+        
+        setLoading(true);
+        try {
+            const res = await axios.put(
+                `${API}/${item._id}/status?companyId=${companyId}`,
+                { isActive: !item.isActive }
+            );
+            setList(list.map(x => x._id === item._id ? res.data : x));
+        } catch (error) {
+            console.error("Error toggling status:", error);
+            alert("Failed to update category status");
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const cancelEdit = () => {
+        setName("");
+        setEditId(null);
+    };
+
+    const filteredList = showInactive 
+        ? list 
+        : list.filter(item => item.isActive !== false);
+
+    // Show loading or redirect if no company
     if (!companyId) {
         return (
             <div className="min-h-screen w-full flex items-center justify-center p-6">
                 <div className="bg-white w-full max-w-2xl p-10 rounded-2xl shadow-xl text-center">
                     <div className="text-7xl mb-5">🏢</div>
                     <h2 className="text-2xl font-bold text-gray-800 mb-3">No Company Associated</h2>
-                    <p className="text-gray-600 mb-6">Please login again to access database seeding.</p>
+                    <p className="text-gray-600 mb-6">Please login again to access categories.</p>
                     <button
                         onClick={() => window.location.href = '/login'}
                         className="bg-blue-600 text-white px-8 py-3 rounded-xl font-semibold hover:bg-blue-700 transition-all shadow-md"
@@ -104,260 +147,196 @@ const SeedDatabase = () => {
                 {/* Header Section */}
                 <div className="mb-8">
                     <h1 className="text-3xl font-bold text-gray-900 flex items-center gap-3">
-                        🌾 Database Seeder
+                        🗂️ Category Management
                     </h1>
-                    <p className="text-gray-600 mt-2">Populate your database with sample grocery data</p>
+                    <p className="text-gray-600 mt-2">Organize your products with categories</p>
                 </div>
 
-                {/* Main Seeding Card */}
+                {/* Form Card */}
                 <div className="bg-white rounded-2xl shadow-lg overflow-hidden mb-8">
-                    <div className="bg-gradient-to-r from-green-600 to-teal-700 px-6 py-4">
-                        <h2 className="text-xl font-semibold text-white flex items-center gap-2">
-                            🚀 Seed Grocery Database
+                    <div className="bg-gradient-to-r from-purple-600 to-indigo-700 px-6 py-4">
+                        <h2 className="text-xl font-semibold text-white">
+                            {editId ? "✏️ Edit Category" : "➕ Add New Category"}
                         </h2>
-                        <p className="text-green-100 text-sm mt-1">
-                            Populate with pre-configured products, brands, categories, and UOMs
+                        <p className="text-purple-100 text-sm mt-1">
+                            {editId ? "Update category details" : "Fill in the category information below"}
                         </p>
                     </div>
                     
                     <div className="p-6 md:p-8">
                         <div className="grid grid-cols-1 gap-6">
-                            {/* Company Selection */}
                             <div>
                                 <label className="block text-sm font-medium mb-1 text-gray-900">
-                                    Select Company <span className="text-red-500">*</span>
+                                    Category Name <span className="text-red-500">*</span>
                                 </label>
-                                <select
-                                    value={selectedCompany}
-                                    onChange={(e) => {
-                                        setSelectedCompany(e.target.value);
-                                        setError(null);
-                                        setSeedResult(null);
-                                    }}
-                                    className="w-full border p-3 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 outline-none transition text-gray-900 bg-white border-gray-300"
-                                    disabled={seeding || loadingCompanies}
-                                >
-                                    <option value="">-- Select a Company --</option>
-                                    {companies.map((company) => (
-                                        <option key={company._id} value={company._id}>
-                                            {company.companyName} {!company.isActive && '(Inactive)'}
-                                        </option>
-                                    ))}
-                                </select>
-                                <p className="text-xs text-gray-500 mt-1">
-                                    Select the company you want to seed data for
-                                </p>
+                                <input
+                                    value={name}
+                                    onChange={(e) => setName(e.target.value)}
+                                    placeholder="Enter category name (e.g., Electronics, Clothing, Food...)"
+                                    className="w-full border p-3 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 outline-none transition text-gray-900 bg-white border-gray-300"
+                                    disabled={loading}
+                                />
+                                <p className="text-xs text-gray-500 mt-1">Categories help group similar products together</p>
                             </div>
-
-                            {/* Warning Message */}
-                            <div className="bg-yellow-50 border-l-4 border-yellow-400 p-4 rounded-lg">
-                                <div className="flex items-start">
-                                    <div className="flex-shrink-0">
-                                        <span className="text-yellow-600 text-lg">⚠️</span>
-                                    </div>
-                                    <div className="ml-3">
-                                        <h3 className="text-sm font-medium text-yellow-800">Warning</h3>
-                                        <p className="text-xs text-yellow-700 mt-1">
-                                            This action will clear ALL existing grocery data (brands, categories, products) 
-                                            for the selected company and replace it with sample data. This cannot be undone!
-                                        </p>
-                                    </div>
+                            
+                            {/* Active Status Toggle */}
+                            {editId && (
+                                <div>
+                                    <label className="flex items-center space-x-3 cursor-pointer p-4 bg-gray-50 rounded-xl border border-gray-200">
+                                        <input
+                                            type="checkbox"
+                                            checked={editId ? list.find(item => item._id === editId)?.isActive : true}
+                                            onChange={(e) => {
+                                                if (editId) {
+                                                    const item = list.find(item => item._id === editId);
+                                                    if (item) toggleStatus(item);
+                                                }
+                                            }}
+                                            className="w-5 h-5 text-purple-600 rounded focus:ring-purple-500"
+                                            disabled={loading}
+                                        />
+                                        <div>
+                                            <span className="text-sm font-medium text-gray-900">
+                                                Category is Active
+                                            </span>
+                                            <p className="text-xs text-gray-500 mt-0.5">
+                                                Active categories are available for product selection
+                                            </p>
+                                        </div>
+                                    </label>
                                 </div>
-                            </div>
+                            )}
                         </div>
 
                         <div className="flex justify-start gap-4 mt-8 pt-4 border-t border-gray-200">
                             <button
-                                onClick={handleSeedDatabase}
-                                disabled={seeding || !selectedCompany || loadingCompanies}
-                                className="bg-gradient-to-r from-green-600 to-teal-600 text-white px-8 py-3 rounded-xl font-semibold hover:from-green-700 hover:to-teal-700 transition-all shadow-md disabled:opacity-50 disabled:cursor-not-allowed"
+                                onClick={saveCategory}
+                                disabled={loading}
+                                className="bg-purple-600 text-white px-8 py-3 rounded-xl font-semibold hover:bg-purple-700 transition-all shadow-md disabled:opacity-50 disabled:cursor-not-allowed"
                             >
-                                {seeding ? (
-                                    <span className="flex items-center gap-2">
-                                        <span className="inline-block animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent"></span>
-                                        Seeding Database...
-                                    </span>
-                                ) : (
-                                    "🚀 Start Seeding"
-                                )}
+                                {loading ? "Saving..." : (editId ? "Update Category" : "Add Category")}
                             </button>
+                            {editId && (
+                                <button
+                                    onClick={cancelEdit}
+                                    disabled={loading}
+                                    className="bg-gray-500 text-white px-8 py-3 rounded-xl font-semibold hover:bg-gray-600 transition-all shadow-md disabled:opacity-50"
+                                >
+                                    Cancel
+                                </button>
+                            )}
                         </div>
-
-                        {/* Error Message */}
-                        {error && (
-                            <div className="mt-6 p-4 bg-red-50 border-l-4 border-red-500 rounded-lg">
-                                <div className="flex items-start">
-                                    <div className="flex-shrink-0">
-                                        <span className="text-red-600">❌</span>
-                                    </div>
-                                    <div className="ml-3">
-                                        <h3 className="text-sm font-medium text-red-800">Error</h3>
-                                        <p className="text-xs text-red-700 mt-1">{error}</p>
-                                    </div>
-                                </div>
-                            </div>
-                        )}
-
-                        {/* Success Result */}
-                        {seedResult && seedResult.success && (
-                            <div className="mt-6 p-4 bg-green-50 border-l-4 border-green-500 rounded-lg">
-                                <div className="flex items-start">
-                                    <div className="flex-shrink-0">
-                                        <span className="text-green-600">✅</span>
-                                    </div>
-                                    <div className="ml-3 flex-1">
-                                        <h3 className="text-sm font-medium text-green-800">
-                                            {seedResult.message}
-                                        </h3>
-                                        <div className="mt-3">
-                                            <h4 className="text-sm font-semibold text-green-900 mb-2">
-                                                Seeding Summary for {seedResult.data.companyName}:
-                                            </h4>
-                                            <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-                                                <div className="bg-green-100 p-3 rounded-lg">
-                                                    <div className="text-lg">🏢</div>
-                                                    <div className="text-xs text-green-700 mt-1">Company ID</div>
-                                                    <div className="text-xs font-mono text-green-800 mt-1">
-                                                        {seedResult.data.companyId.slice(-6)}
-                                                    </div>
-                                                </div>
-                                                <div className="bg-green-100 p-3 rounded-lg">
-                                                    <div className="text-lg">🏷️</div>
-                                                    <div className="text-xs text-green-700 mt-1">Brands</div>
-                                                    <div className="text-sm font-bold text-green-900">
-                                                        {seedResult.data.brands}
-                                                    </div>
-                                                </div>
-                                                <div className="bg-green-100 p-3 rounded-lg">
-                                                    <div className="text-lg">📂</div>
-                                                    <div className="text-xs text-green-700 mt-1">Categories</div>
-                                                    <div className="text-sm font-bold text-green-900">
-                                                        {seedResult.data.categories}
-                                                    </div>
-                                                </div>
-                                                <div className="bg-green-100 p-3 rounded-lg">
-                                                    <div className="text-lg">📏</div>
-                                                    <div className="text-xs text-green-700 mt-1">UOMs</div>
-                                                    <div className="text-sm font-bold text-green-900">
-                                                        {seedResult.data.uoms}
-                                                    </div>
-                                                </div>
-                                                <div className="bg-green-100 p-3 rounded-lg">
-                                                    <div className="text-lg">🛒</div>
-                                                    <div className="text-xs text-green-700 mt-1">Products</div>
-                                                    <div className="text-sm font-bold text-green-900">
-                                                        {seedResult.data.products}
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                        )}
                     </div>
                 </div>
 
-                {/* What Will Be Seeded Card */}
+                {/* Category List Card */}
                 <div className="bg-white rounded-2xl shadow-lg overflow-hidden">
                     <div className="bg-gradient-to-r from-gray-700 to-gray-800 px-6 py-4">
-                        <h2 className="text-xl font-semibold text-white flex items-center gap-2">
-                            📋 What Will Be Seeded?
-                        </h2>
-                        <p className="text-gray-300 text-sm mt-1">
-                            Complete grocery dataset for Tamil Nadu retail stores
-                        </p>
+                        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                            <div>
+                                <h2 className="text-xl font-semibold text-white flex items-center gap-2">
+                                    📋 Category List
+                                </h2>
+                                <p className="text-gray-300 text-sm mt-1">
+                                    Manage your product categories
+                                </p>
+                            </div>
+                            <div className="flex items-center space-x-3 bg-gray-700/50 px-4 py-2 rounded-xl">
+                                <label className="flex items-center space-x-2 cursor-pointer">
+                                    <input
+                                        type="checkbox"
+                                        checked={showInactive}
+                                        onChange={(e) => setShowInactive(e.target.checked)}
+                                        className="w-4 h-4 text-purple-500 rounded"
+                                    />
+                                    <span className="text-sm text-gray-200">Show inactive categories</span>
+                                </label>
+                            </div>
+                        </div>
                     </div>
                     
                     <div className="p-6">
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                            <div>
-                                <div className="flex items-center gap-2 mb-3">
-                                    <span className="text-xl">🏷️</span>
-                                    <h3 className="font-semibold text-gray-900">Popular Brands (25+)</h3>
-                                </div>
-                                <div className="bg-gray-50 p-4 rounded-lg">
-                                    <div className="flex flex-wrap gap-2">
-                                        {["MTR", "Aashirvaad", "Britannia", "Parle", "Amul", "Patanjali", "Maggi", "MDH", "Everest", "Fortune", "Dabur", "Haldiram's"].map(brand => (
-                                            <span key={brand} className="inline-block bg-white px-2 py-1 rounded text-xs text-gray-700 border border-gray-200">
-                                                {brand}
-                                            </span>
-                                        ))}
-                                        <span className="inline-block bg-gray-200 px-2 py-1 rounded text-xs text-gray-600">+13 more</span>
-                                    </div>
-                                </div>
-                            </div>
-
-                            <div>
-                                <div className="flex items-center gap-2 mb-3">
-                                    <span className="text-xl">📂</span>
-                                    <h3 className="font-semibold text-gray-900">Categories (18+)</h3>
-                                </div>
-                                <div className="bg-gray-50 p-4 rounded-lg">
-                                    <div className="flex flex-wrap gap-2">
-                                        {["Rice & Grains", "Spices", "Dairy Products", "Beverages", "Snacks", "Oils", "Flours", "Personal Care"].map(cat => (
-                                            <span key={cat} className="inline-block bg-white px-2 py-1 rounded text-xs text-gray-700 border border-gray-200">
-                                                {cat}
-                                            </span>
-                                        ))}
-                                        <span className="inline-block bg-gray-200 px-2 py-1 rounded text-xs text-gray-600">+10 more</span>
-                                    </div>
-                                </div>
-                            </div>
-
-                            <div>
-                                <div className="flex items-center gap-2 mb-3">
-                                    <span className="text-xl">🛒</span>
-                                    <h3 className="font-semibold text-gray-900">Sample Products</h3>
-                                </div>
-                                <div className="bg-gray-50 p-4 rounded-lg">
-                                    <ul className="space-y-1 text-sm text-gray-700">
-                                        <li>• Raw Rice - Ponni (1kg, 5kg, 10kg variants)</li>
-                                        <li>• Wheat Flour - Aashirvaad (1kg, 5kg)</li>
-                                        <li>• Turmeric Powder (100g, 200g packs)</li>
-                                        <li>• Sunflower Oil (1L, 2L, 5L bottles)</li>
-                                        <li>• Parle-G Biscuits (50g, 100g, 500g packs)</li>
-                                        <li>• Maggi Noodles (70g, 140g packs)</li>
-                                        <li>• Amul Milk, Curd, Paneer, Butter</li>
-                                        <li>• Coca-Cola, Pepsi, Sprite beverages</li>
-                                    </ul>
-                                </div>
-                            </div>
-
-                            <div>
-                                <div className="flex items-center gap-2 mb-3">
-                                    <span className="text-xl">📏</span>
-                                    <h3 className="font-semibold text-gray-900">Units of Measurement</h3>
-                                </div>
-                                <div className="bg-gray-50 p-4 rounded-lg">
-                                    <div className="flex flex-wrap gap-2">
-                                        {["Kg", "Gram", "Liter", "Ml", "Piece", "Pack", "Dozen", "Box", "Bottle", "Packet", "Bag", "Tin"].map(uom => (
-                                            <span key={uom} className="inline-block bg-white px-2 py-1 rounded text-xs text-gray-700 border border-gray-200">
-                                                {uom}
-                                            </span>
-                                        ))}
-                                    </div>
-                                </div>
+                        <div className="mb-4 flex justify-between items-center">
+                            <div className="text-sm text-gray-600">
+                                Showing {filteredList.length} of {list.length} categories
                             </div>
                         </div>
 
-                        <div className="mt-6 p-4 bg-blue-50 rounded-lg">
-                            <div className="flex items-start gap-3">
-                                <span className="text-blue-600 text-xl">✨</span>
-                                <div>
-                                    <p className="text-sm text-blue-900 font-medium">Tamil Language Support</p>
-                                    <p className="text-xs text-blue-700 mt-1">
-                                        All products include Tamil names for better accessibility in Tamil Nadu stores.
-                                        Example: "பொன்னி அரிசி", "கோதுமை மாவு", "மஞ்சள் தூள்"
-                                    </p>
-                                </div>
+                        {loading && list.length === 0 ? (
+                            <div className="text-center py-12">
+                                <div className="inline-block animate-spin rounded-full h-10 w-10 border-4 border-purple-200 border-t-purple-600"></div>
+                                <p className="text-gray-600 mt-4">Loading categories...</p>
                             </div>
-                        </div>
-
-                        <div className="mt-4 text-center text-xs text-gray-500 pt-4 border-t border-gray-200">
-                            <p>✅ This will create 25+ products with multiple variants, 25+ brands, 18+ categories, and 12+ UOMs</p>
-                            <p className="mt-1">📊 Perfect for getting started with grocery business in Tamil Nadu</p>
-                        </div>
+                        ) : filteredList.length === 0 ? (
+                            <div className="text-center py-12 bg-gray-50 rounded-xl">
+                                <div className="text-5xl mb-3">🗂️</div>
+                                <p className="text-gray-600">
+                                    {showInactive ? "No categories found." : "No active categories found. Toggle 'Show inactive categories' to view all."}
+                                </p>
+                            </div>
+                        ) : (
+                            <div className="space-y-3">
+                                {filteredList.map(item => (
+                                    <div
+                                        key={item._id}
+                                        className={`p-4 rounded-xl transition-all duration-200 hover:shadow-md ${
+                                            item.isActive === false ? 'bg-gray-50 border border-gray-200 opacity-75' : 'bg-gray-50 border border-gray-200 hover:border-purple-200'
+                                        }`}
+                                    >
+                                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                                            <div className="flex-1">
+                                                <div className="flex items-center gap-3 flex-wrap">
+                                                    <div className="font-semibold text-gray-900 text-lg">
+                                                        {item.name}
+                                                    </div>
+                                                    {item.isActive === false && (
+                                                        <span className="bg-red-100 text-red-700 text-xs px-2 py-1 rounded-full font-medium">
+                                                            Inactive
+                                                        </span>
+                                                    )}
+                                                    {item.isActive !== false && (
+                                                        <span className="bg-green-100 text-green-700 text-xs px-2 py-1 rounded-full font-medium">
+                                                            Active
+                                                        </span>
+                                                    )}
+                                                </div>
+                                            
+                                                <div className="text-xs text-gray-500 mt-2">
+                                                    <span className="font-medium">Created:</span> {new Date(item.createdAt).toLocaleDateString()}
+                                                </div>
+                                            </div>
+                                            <div className="flex items-center gap-2">
+                                                <button
+                                                    onClick={() => toggleStatus(item)}
+                                                    className={`px-3 py-2 rounded-lg font-medium text-sm transition-all ${
+                                                        item.isActive === false 
+                                                            ? 'bg-green-500 text-white hover:bg-green-600' 
+                                                            : 'bg-yellow-500 text-white hover:bg-yellow-600'
+                                                    }`}
+                                                    title={item.isActive === false ? "Activate" : "Deactivate"}
+                                                >
+                                                    {item.isActive === false ? '✅ Activate' : '⏸️ Deactivate'}
+                                                </button>
+                                                <button
+                                                    onClick={() => editItem(item)}
+                                                    className="bg-blue-500 text-white px-3 py-2 rounded-lg hover:bg-blue-600 transition-all font-medium text-sm"
+                                                    title="Edit"
+                                                >
+                                                    ✏️ Edit
+                                                </button>
+                                                <button
+                                                    onClick={() => deleteItem(item._id)}
+                                                    className="bg-red-500 text-white px-3 py-2 rounded-lg hover:bg-red-600 transition-all font-medium text-sm"
+                                                    title="Delete"
+                                                >
+                                                    🗑️ Delete
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
                     </div>
                 </div>
             </div>
@@ -365,4 +344,4 @@ const SeedDatabase = () => {
     );
 };
 
-export default SeedDatabase;
+export default Category;

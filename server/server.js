@@ -32,6 +32,7 @@ app.use(cors());
 app.use(express.json());
 
 // ==================== API ROUTES ====================
+
 // Core routes
 app.use("/admin", authRoutes);
 app.use("/bills", billRoutes);
@@ -47,68 +48,33 @@ app.use("/reports", reportRoutes);
 app.use("/uoms", uomRoutes);
 app.use("/users", userRoutes);
 
-// Seed routes (must be last to avoid conflicts)
+// Seed route last
 app.use("/", seedRoutes);
 
 // ==================== HEALTH CHECK ====================
 app.get("/", (req, res) => {
-  res.send("API Running");
+  res.send("API Running 🚀");
 });
 
-// ==================== BILLING ENDPOINTS ====================
-/**
- * Create new billing invoice
- * POST /billing
- */
-// app.post("/billing", async (req, res) => {
-//   try {
-//     const { items } = req.body;
-//     let totalAmount = 0;
+// ==================== DATABASE CONNECTION ====================
+mongoose
+  .connect(process.env.MONGO_URI, {
+    serverSelectionTimeoutMS: 10000,
+  })
+  .then(() => {
+    console.log("✅ MongoDB Connected");
 
-//     // Update stock for each item
-//     for (const item of items) {
-//       totalAmount += item.total;
-//       await Product.findByIdAndUpdate(item.product, { $inc: { stock: -item.qty } });
-//     }
+    // ==================== START SERVER ====================
+    const PORT = process.env.PORT || 5000;
 
-//     const invoice = new Invoice({ items, totalAmount });
-//     const saved = await invoice.save();
-    
-//     res.json(saved);
-//   } catch (err) {
-//     res.status(500).json({ message: err.message });
-//   }
-// });
-
-/**
- * Get distinct customers from bills
- * GET /bills/customers
- */
-// app.get("/bills/customers", async (req, res) => {
-//   try {
-//     const customers = await Bill.distinct("customer");
-//     const filteredCustomers = customers
-//       .filter(c => c && c.trim() !== "")
-//       .sort();
-    
-//     res.json({ success: true, customers: filteredCustomers });
-//   } catch (error) {
-//     res.status(500).json({ success: false, message: error.message });
-//   }
-// });
-
-// Add this line with your other routes
-const paymentReportRoutes = require('./routes/paymentReportRoutes');
-app.use('/payment-reports', paymentReportRoutes);
-
-
-const expenseTransactionRoutes = require('./routes/expenseTransactionRoutes');
-app.use('/expense-transactions', expenseTransactionRoutes);
-
-// ==================== START SERVER ====================
-const PORT = process.env.PORT || 5000;
-
-app.listen(PORT, "0.0.0.0", () => {
-  console.log(`🚀 Server running on port ${PORT}`);
-  console.log(`📦 Environment: ${process.env.NODE_ENV || "development"}`);
-});
+    app.listen(PORT, "0.0.0.0", () => {
+      console.log(`🚀 Server running on port ${PORT}`);
+      console.log(
+        `📦 Environment: ${process.env.NODE_ENV || "development"}`
+      );
+    });
+  })
+  .catch((err) => {
+    console.error("❌ MongoDB Connection Error:");
+    console.error(err.message);
+  });
