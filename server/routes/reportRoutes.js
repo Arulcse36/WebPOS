@@ -169,11 +169,12 @@ router.get('/bills', async (req, res) => {
     });
   }
 });
-// ✅ NEW ROUTE: Get single bill by ID
+// ✅ NEW ROUTE: Get single bill by ID test
 router.get('/bills/:id', async (req, res) => {
   try {
     const { id } = req.params;
     const { companyId } = req.query;
+
 
     if (!companyId) {
       return res.status(400).json({
