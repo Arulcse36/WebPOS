@@ -255,6 +255,20 @@ const ProductBulk = () => {
         });
     }, [products, filterStatus, search, filterCategory, filterBrand, filterUom]);
 
+    // Get UOMs that are actually used in products
+    const availableUoms = useMemo(() => {
+        // Get unique UOM IDs from products
+        const usedUomIds = new Set();
+        products.forEach(p => {
+            if (p.uom?._id) {
+                usedUomIds.add(p.uom._id);
+            }
+        });
+        
+        // Filter UOMs to only those used in products
+        return uoms.filter(uom => usedUomIds.has(uom._id));
+    }, [products, uoms]);
+
     // Pagination calculations
     const totalPages = Math.ceil(filteredProducts.length / rowsPerPage);
     const startIndex = (currentPage - 1) * rowsPerPage;
@@ -781,7 +795,7 @@ const ProductBulk = () => {
                             className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-400 outline-none text-gray-900 bg-white"
                         >
                             <option value="">All UOMs</option>
-                            {uoms.map(u => <option key={u._id} value={u._id}>{u.name}</option>)}
+                            {availableUoms.map(u => <option key={u._id} value={u._id}>{u.name}</option>)}
                         </select>
                         <select
                             value={filterStatus}
@@ -1086,78 +1100,78 @@ const ProductBulk = () => {
                                 </table>
                             </div>
                             
-{/* Pagination Footer - Alternative with more vibrant colors */}
-{totalPages > 1 && (
-    <div className="flex justify-between items-center px-4 py-3 bg-white border-t border-gray-200">
-        <div className="text-sm text-gray-600">
-            Page <span className="font-semibold text-gray-900">{currentPage}</span> of <span className="font-semibold text-gray-900">{totalPages}</span>
-        </div>
-        <div className="flex gap-2">
-            <button
-                onClick={() => goToPage(1)}
-                disabled={currentPage === 1}
-                className="px-3 py-1.5 text-sm font-medium rounded-lg disabled:opacity-40 disabled:cursor-not-allowed transition-all
-                    bg-gray-100 text-gray-700 hover:bg-gray-200 border border-gray-300"
-            >
-                ⏮ First
-            </button>
-            <button
-                onClick={() => goToPage(currentPage - 1)}
-                disabled={currentPage === 1}
-                className="px-3 py-1.5 text-sm font-medium rounded-lg disabled:opacity-40 disabled:cursor-not-allowed transition-all
-                    bg-gray-100 text-gray-700 hover:bg-gray-200 border border-gray-300"
-            >
-                ◀ Prev
-            </button>
-            <div className="flex gap-1">
-                {(() => {
-                    const maxVisible = 5;
-                    let startPage = Math.max(1, currentPage - Math.floor(maxVisible / 2));
-                    let endPage = Math.min(totalPages, startPage + maxVisible - 1);
-                    if (endPage - startPage + 1 < maxVisible) {
-                        startPage = Math.max(1, endPage - maxVisible + 1);
-                    }
-                    const pages = [];
-                    for (let i = startPage; i <= endPage; i++) {
-                        pages.push(i);
-                    }
-                    return pages.map(page => (
-                        <button
-                            key={page}
-                            onClick={() => goToPage(page)}
-                            className={`w-8 h-8 text-sm font-semibold rounded-lg transition-all ${
-                                currentPage === page
-                                    ? 'bg-blue-600 text-white shadow-md transform scale-105'
-                                    : 'bg-gray-100 text-gray-700 hover:bg-blue-100 hover:text-blue-700 border border-gray-200'
-                            }`}
-                        >
-                            {page}
-                        </button>
-                    ));
-                })()}
-            </div>
-            <button
-                onClick={() => goToPage(currentPage + 1)}
-                disabled={currentPage === totalPages}
-                className="px-3 py-1.5 text-sm font-medium rounded-lg disabled:opacity-40 disabled:cursor-not-allowed transition-all
-                    bg-gray-100 text-gray-700 hover:bg-gray-200 border border-gray-300"
-            >
-                Next ▶
-            </button>
-            <button
-                onClick={() => goToPage(totalPages)}
-                disabled={currentPage === totalPages}
-                className="px-3 py-1.5 text-sm font-medium rounded-lg disabled:opacity-40 disabled:cursor-not-allowed transition-all
-                    bg-gray-100 text-gray-700 hover:bg-gray-200 border border-gray-300"
-            >
-                Last ⏭
-            </button>
-        </div>
-        <div className="text-xs text-gray-500">
-            Showing {startIndex + 1}-{Math.min(endIndex, filteredProducts.length)} of {filteredProducts.length}
-        </div>
-    </div>
-)}
+                            {/* Pagination Footer */}
+                            {totalPages > 1 && (
+                                <div className="flex justify-between items-center px-4 py-3 bg-white border-t border-gray-200">
+                                    <div className="text-sm text-gray-600">
+                                        Page <span className="font-semibold text-gray-900">{currentPage}</span> of <span className="font-semibold text-gray-900">{totalPages}</span>
+                                    </div>
+                                    <div className="flex gap-2">
+                                        <button
+                                            onClick={() => goToPage(1)}
+                                            disabled={currentPage === 1}
+                                            className="px-3 py-1.5 text-sm font-medium rounded-lg disabled:opacity-40 disabled:cursor-not-allowed transition-all
+                                                bg-gray-100 text-gray-700 hover:bg-gray-200 border border-gray-300"
+                                        >
+                                            ⏮ First
+                                        </button>
+                                        <button
+                                            onClick={() => goToPage(currentPage - 1)}
+                                            disabled={currentPage === 1}
+                                            className="px-3 py-1.5 text-sm font-medium rounded-lg disabled:opacity-40 disabled:cursor-not-allowed transition-all
+                                                bg-gray-100 text-gray-700 hover:bg-gray-200 border border-gray-300"
+                                        >
+                                            ◀ Prev
+                                        </button>
+                                        <div className="flex gap-1">
+                                            {(() => {
+                                                const maxVisible = 5;
+                                                let startPage = Math.max(1, currentPage - Math.floor(maxVisible / 2));
+                                                let endPage = Math.min(totalPages, startPage + maxVisible - 1);
+                                                if (endPage - startPage + 1 < maxVisible) {
+                                                    startPage = Math.max(1, endPage - maxVisible + 1);
+                                                }
+                                                const pages = [];
+                                                for (let i = startPage; i <= endPage; i++) {
+                                                    pages.push(i);
+                                                }
+                                                return pages.map(page => (
+                                                    <button
+                                                        key={page}
+                                                        onClick={() => goToPage(page)}
+                                                        className={`w-8 h-8 text-sm font-semibold rounded-lg transition-all ${
+                                                            currentPage === page
+                                                                ? 'bg-blue-600 text-white shadow-md transform scale-105'
+                                                                : 'bg-gray-100 text-gray-700 hover:bg-blue-100 hover:text-blue-700 border border-gray-200'
+                                                        }`}
+                                                    >
+                                                        {page}
+                                                    </button>
+                                                ));
+                                            })()}
+                                        </div>
+                                        <button
+                                            onClick={() => goToPage(currentPage + 1)}
+                                            disabled={currentPage === totalPages}
+                                            className="px-3 py-1.5 text-sm font-medium rounded-lg disabled:opacity-40 disabled:cursor-not-allowed transition-all
+                                                bg-gray-100 text-gray-700 hover:bg-gray-200 border border-gray-300"
+                                        >
+                                            Next ▶
+                                        </button>
+                                        <button
+                                            onClick={() => goToPage(totalPages)}
+                                            disabled={currentPage === totalPages}
+                                            className="px-3 py-1.5 text-sm font-medium rounded-lg disabled:opacity-40 disabled:cursor-not-allowed transition-all
+                                                bg-gray-100 text-gray-700 hover:bg-gray-200 border border-gray-300"
+                                        >
+                                            Last ⏭
+                                        </button>
+                                    </div>
+                                    <div className="text-xs text-gray-500">
+                                        Showing {startIndex + 1}-{Math.min(endIndex, filteredProducts.length)} of {filteredProducts.length}
+                                    </div>
+                                </div>
+                            )}
                         </>
                     )}
                 </div>
