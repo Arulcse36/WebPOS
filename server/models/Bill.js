@@ -88,7 +88,12 @@ const billSchema = new mongoose.Schema({
     type: Number,
     default: 0
   },
-  paymentMethod: {
+  rateType: {
+    type: String,
+    enum: ['retail', 'wholesale'],
+    required: true
+  },
+   paymentMethod: {
     type: String,
     enum: ['cash', 'upi', 'credit'],
     required: true

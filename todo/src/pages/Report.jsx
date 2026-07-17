@@ -151,6 +151,7 @@ const Reports = () => {
           paid: roundToTwoDecimals(bill.paid || 0),
           due: roundToTwoDecimals(bill.due || 0),
           subtotal: roundToTwoDecimals(bill.subtotal || 0),
+          rateType: bill.rateType || 'retail',
           discountAmount: roundToTwoDecimals(bill.discountAmount || 0)
         };
       });
@@ -237,18 +238,17 @@ const Reports = () => {
     navigate(`/pos/edit/${billId}`);
   };
 
-
   // ✅ Handle edit bill for Retail POS (NEW)
-const handleEditBillRetail = (bill) => {
-  const billId = bill._id || bill.id || bill.billId;
-  
-  if (!billId) {
-    alert("Cannot edit this bill: No ID found. Please check the bill data.");
-    return;
-  }
-  
-  navigate(`/RetailPos/edit/${billId}`);
-};
+  const handleEditBillRetail = (bill) => {
+    const billId = bill._id || bill.id || bill.billId;
+    
+    if (!billId) {
+      alert("Cannot edit this bill: No ID found. Please check the bill data.");
+      return;
+    }
+    
+    navigate(`/RetailPos/edit/${billId}`);
+  };
 
   // ✅ Handle delete bill (only for admins)
   const handleDeleteBill = async (bill) => {
@@ -290,6 +290,7 @@ const handleEditBillRetail = (bill) => {
       ID: ${bill._id || bill.id || 'N/A'}
       Date: ${formatDate(bill.date)}
       Customer: ${bill.customer || "Walk-in"}
+      Rate Type: ${bill.rateType === 'wholesale' ? 'Wholesale' : 'Retail'}
       Total: ${formatCurrency(bill.total)}
       Paid: ${formatCurrency(bill.paid)}
       Due: ${formatCurrency(bill.due)}
@@ -299,23 +300,24 @@ const handleEditBillRetail = (bill) => {
     alert(message);
   };
 
-// ✅ Handle print bill - Using the imported handlePrintBill
-const handlePrintBillWeb = (bill) => {
-  // Get the bill ID - this is the MongoDB _id
-  const billId = bill._id || bill.id || bill.billId;
+  // ✅ Handle print bill - Using the imported handlePrintBill
+  const handlePrintBillWeb = (bill) => {
+    // Get the bill ID - this is the MongoDB _id
+    const billId = bill._id || bill.id || bill.billId;
+    
+    if (!billId) {
+      alert("Cannot print this bill: No ID found. Please check the bill data.");
+      console.error("No bill ID found for bill:", bill);
+      return;
+    }
+    
+    console.log("Printing bill with ID:", billId);
+    
+    // Call handlePrintBill with just the billId
+    // The onClose callback is optional
+    handlePrintBill(billId);
+  };
   
-  if (!billId) {
-    alert("Cannot print this bill: No ID found. Please check the bill data.");
-    console.error("No bill ID found for bill:", bill);
-    return;
-  }
-  
-  console.log("Printing bill with ID:", billId);
-  
-  // Call handlePrintBill with just the billId
-  // The onClose callback is optional
-  handlePrintBill(billId);
-};
   // ✅ Handle delete payment record (only for admins)
   const handleDeletePayment = async (paymentIndex) => {
     if (!canDelete) {
@@ -990,6 +992,7 @@ const handlePrintBillWeb = (bill) => {
                     <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600">Bill No</th>
                     <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600">Date</th>
                     <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600">Customer</th>
+                    <th className="px-4 py-3 text-center text-xs font-semibold text-gray-600">Rate Type</th>
                     <th className="px-4 py-3 text-right text-xs font-semibold text-gray-600">Amount</th>
                     <th className="px-4 py-3 text-right text-xs font-semibold text-gray-600">Paid</th>
                     <th className="px-4 py-3 text-right text-xs font-semibold text-gray-600">Due</th>
@@ -1009,6 +1012,15 @@ const handlePrintBillWeb = (bill) => {
                         <td className="px-4 py-3 text-gray-700">
                           {bill.customer || "Walk-in"}
                         </td>
+                        <td className="px-4 py-3 text-center">
+                          <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold ${
+                            bill.rateType === 'wholesale' 
+                              ? 'bg-purple-100 text-purple-700' 
+                              : 'bg-indigo-100 text-indigo-700'
+                          }`}>
+                            {bill.rateType === 'wholesale' ? '💰 Wholesale' : '🏷️ Retail'}
+                          </span>
+                        </td>
                         <td className="px-4 py-3 text-right font-semibold text-blue-600">
                           {formatCurrency(bill.total)}
                         </td>
@@ -1018,65 +1030,65 @@ const handlePrintBillWeb = (bill) => {
                         <td className={`px-4 py-3 text-right font-semibold ${bill.due > 0 ? 'text-red-600' : 'text-gray-500'}`}>
                           {formatCurrency(bill.due)}
                         </td>
-<td className="px-4 py-3 text-center">
-  <div className="flex flex-wrap gap-1 justify-center">
-    {/* Edit Button - Regular POS */}
-    <button
-      onClick={() => handleEditBill(bill)}
-      className="p-1.5 bg-blue-100 text-blue-600 rounded hover:bg-blue-200 transition"
-      title="Edit in POS"
-    >
-      ✏️ POS
-    </button>
-    
-    {/* Edit Button - Retail POS (NEW) */}
-    <button
-      onClick={() => handleEditBillRetail(bill)}
-      className="p-1.5 bg-indigo-100 text-indigo-600 rounded hover:bg-indigo-200 transition"
-      title="Edit in Retail POS"
-    >
-      🛍️ Retail
-    </button>
-    
-    <button
-      onClick={() => fetchPaymentHistory(bill)}
-      className="p-1.5 bg-indigo-100 text-indigo-600 rounded hover:bg-indigo-200 transition"
-      title="Payment History"
-    >
-      📜
-    </button>
-    {bill.due > 0 && (
-      <button
-        onClick={() => handlePayDue(bill)}
-        className="p-1.5 bg-yellow-100 text-yellow-700 rounded hover:bg-yellow-200 transition"
-        title="Pay Due"
-      >
-        💰
-      </button>
-    )}
-    <button
-      onClick={() => handlePrintBillWeb(bill)}
-      className="p-1.5 bg-purple-100 text-purple-600 rounded hover:bg-purple-200 transition"
-      title="Print Bill"
-    >
-      🖨️
-    </button>
-    {canDelete && (
-      <button
-        onClick={() => handleDeleteBill(bill)}
-        className="p-1.5 bg-red-100 text-red-600 rounded hover:bg-red-200 transition"
-        title="Delete Bill"
-      >
-        🗑️
-      </button>
-    )}
-  </div>
-</td>
+                        <td className="px-4 py-3 text-center">
+                          <div className="flex flex-wrap gap-1 justify-center">
+                            {/* Edit Button - Regular POS */}
+                            <button
+                              onClick={() => handleEditBill(bill)}
+                              className="p-1.5 bg-blue-100 text-blue-600 rounded hover:bg-blue-200 transition"
+                              title="Edit in POS"
+                            >
+                              ✏️ POS
+                            </button>
+                            
+                            {/* Edit Button - Retail POS */}
+                            <button
+                              onClick={() => handleEditBillRetail(bill)}
+                              className="p-1.5 bg-indigo-100 text-indigo-600 rounded hover:bg-indigo-200 transition"
+                              title="Edit in Retail POS"
+                            >
+                              🛍️ Retail
+                            </button>
+                            
+                            <button
+                              onClick={() => fetchPaymentHistory(bill)}
+                              className="p-1.5 bg-indigo-100 text-indigo-600 rounded hover:bg-indigo-200 transition"
+                              title="Payment History"
+                            >
+                              📜
+                            </button>
+                            {bill.due > 0 && (
+                              <button
+                                onClick={() => handlePayDue(bill)}
+                                className="p-1.5 bg-yellow-100 text-yellow-700 rounded hover:bg-yellow-200 transition"
+                                title="Pay Due"
+                              >
+                                💰
+                              </button>
+                            )}
+                            <button
+                              onClick={() => handlePrintBillWeb(bill)}
+                              className="p-1.5 bg-purple-100 text-purple-600 rounded hover:bg-purple-200 transition"
+                              title="Print Bill"
+                            >
+                              🖨️
+                            </button>
+                            {canDelete && (
+                              <button
+                                onClick={() => handleDeleteBill(bill)}
+                                className="p-1.5 bg-red-100 text-red-600 rounded hover:bg-red-200 transition"
+                                title="Delete Bill"
+                              >
+                                🗑️
+                              </button>
+                            )}
+                          </div>
+                        </td>
                       </tr>
                     ))
                   ) : (
                     <tr>
-                      <td colSpan="7" className="text-center py-12 text-gray-400">
+                      <td colSpan="8" className="text-center py-12 text-gray-400">
                         <div className="text-4xl mb-2">📭</div>
                         <p>No data found</p>
                         <p className="text-xs mt-1">Try adjusting your filters</p>
@@ -1094,11 +1106,12 @@ const handlePrintBillWeb = (bill) => {
               <button
                 onClick={() => {
                   const csv = [
-                    ['Bill No', 'Date', 'Customer', 'Total', 'Paid', 'Due', 'Payment Method'],
+                    ['Bill No', 'Date', 'Customer', 'Rate Type', 'Total', 'Paid', 'Due', 'Payment Method'],
                     ...bills.map(bill => [
                       bill.billNumber,
                       formatDate(bill.date),
                       bill.customer || 'Walk-in',
+                      bill.rateType === 'wholesale' ? 'Wholesale' : 'Retail',
                       bill.total.toFixed(2),
                       bill.paid.toFixed(2),
                       bill.due.toFixed(2),

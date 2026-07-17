@@ -61,7 +61,8 @@ exports.createBill = async (req, res) => {
       customerEmail,
       customerAddress,
       billDate,
-      notes
+      notes,
+      rateType    
     } = req.body;
 
     console.log("Create bill payload:", req.body);
@@ -194,6 +195,7 @@ exports.createBill = async (req, res) => {
       billNumber,
       items: billItems,
       subtotal,
+      rateType: rateType,
       discount: roundToTwo(discount || 0),
       discountAmount: finalDiscountAmount,
       total: finalTotal,
@@ -269,6 +271,7 @@ exports.updateBill = async (req, res) => {
       customerEmail,
       customerAddress,
       billDate,
+      rateType,
       notes
     } = req.body;
 
@@ -457,6 +460,8 @@ exports.updateBill = async (req, res) => {
       );
     }
 
+
+
     // 🧾 Update Bill
     const updatedBill = await Bill.findOneAndUpdate(
       { _id: id, companyId },
@@ -471,6 +476,7 @@ exports.updateBill = async (req, res) => {
         returnAmount: finalReturnAmount,
         cashPaid: finalCashPaid,
         upiPaid: finalUpiPaid,
+        rateType,
         paymentMethod,
         customer: customerDetails,
         billDate: billDate ? new Date(billDate) : existingBill.billDate,
@@ -671,6 +677,7 @@ exports.getBillById = async (req, res) => {
       dueAmount: roundToTwo(bill.dueAmount),
       cashPaid: roundToTwo(bill.cashPaid),
       returnAmount: roundToTwo(bill.returnAmount),
+      rateType: bill.rateType,
       upiPaid: roundToTwo(bill.upiPaid),
       total: roundToTwo(bill.total),
       customerId: bill.customer.customerId?._id || null,
@@ -679,6 +686,7 @@ exports.getBillById = async (req, res) => {
       customerEmail: bill.customer.email,
       customerAddress: bill.customer.address,
       billDate: bill.billDate,
+      salesType: bill.rateType ,
       notes: bill.notes,
       status: bill.status,
       createdAt: bill.createdAt,

@@ -51,6 +51,7 @@ app.use("/users", userRoutes);
 // Seed route last
 app.use("/", seedRoutes);
 
+
 // ==================== HEALTH CHECK ====================
 app.get("/", (req, res) => {
   res.send("API Running 🚀");

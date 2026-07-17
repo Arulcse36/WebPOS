@@ -126,6 +126,7 @@ router.get('/bills', async (req, res) => {
         customer: bill.customer?.name || "Walk-in",
         customerPhone: bill.customer?.phone,
         paymentMethod: bill.paymentMethod,
+        rateType: bill.rateType || 'retail', // ✅ ADD THIS - Include rateType with default value
         itemCount,
         total: bill.total,
         discount: bill.discount,
@@ -218,6 +219,7 @@ router.get('/bills/:id', async (req, res) => {
       paymentMethod: bill.paymentMethod,
       itemCount,
       total: bill.total,
+      salesType: bill.rateType, // Include rateType with default value
       discount: bill.discount,
       discountAmount: bill.discountAmount,
       paidOriginal: bill.paidAmount,
