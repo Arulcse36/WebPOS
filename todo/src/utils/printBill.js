@@ -2,6 +2,9 @@ import axios from "axios";
 
 const API = import.meta.env.VITE_API_URL;
 
+// ---- Print option visibility toggles ----
+const SHOW_WEB_PRINT = false; // set to true to bring back the "Web Print" button
+
 const fetchCompanyDetails = async () => {
   try {
     const companyId = localStorage.getItem("companyId");
@@ -24,26 +27,26 @@ const fetchBillDetails = async (billId) => {
       console.warn("No bill ID provided");
       return null;
     }
-    
+
     const companyId = localStorage.getItem("companyId");
     if (!companyId) {
       console.warn("No company ID found");
       return null;
     }
-    
+
     const apiUrl = API.endsWith('/') ? API : `${API}/`;
     const url = `${apiUrl}bills/${billId}`;
-    
+
     console.log("Fetching bill from URL:", url);
     console.log("With params:", { companyId });
-    
+
     const response = await axios.get(url, {
       params: { companyId },
       timeout: 10000
     });
-    
+
     console.log("Bill fetch response:", response.data);
-    
+
     const billData = response.data.data || response.data;
     return billData;
   } catch (error) {
@@ -74,9 +77,9 @@ const fetchProductDetails = async (productId, companyId) => {
 // Enrich bill items with product details including Tamil name
 const enrichBillItemsWithProductDetails = async (items, companyId) => {
   if (!items || items.length === 0) return items;
-  
+
   const enrichedItems = [];
-  
+
   for (const currentItem of items) {
     if (currentItem.productId) {
       try {
@@ -106,7 +109,7 @@ const enrichBillItemsWithProductDetails = async (items, companyId) => {
       enrichedItems.push(currentItem);
     }
   }
-  
+
   return enrichedItems;
 };
 
@@ -125,44 +128,44 @@ function escHtml(str) {
 // Helper function to extract customer name from various possible structures
 const getCustomerName = (billData) => {
   const customer = billData;
-  
+
   if (!customer) return "Walk-in Customer";
-  
+
   if (typeof customer === 'string') {
     const trimmed = customer.trim();
     return trimmed ? trimmed : "Walk-in Customer";
   }
 
   if (typeof customer === 'object') {
-    const name = customer.name || 
-                 customer.customerName || 
-                 customer.fullName || 
+    const name = customer.name ||
+                 customer.customerName ||
+                 customer.fullName ||
                  customer.displayName;
-    
+
     if (name && typeof name === 'string' && name.trim()) {
       return name.trim();
     }
   }
-  
+
   if (billData.customerName && typeof billData.customerName === 'string') {
     const trimmed = billData.customerName.trim();
     if (trimmed) return trimmed;
   }
-  
+
   return "Walk-in Customer";
 };
 
 // Helper function to extract customer phone
 const getCustomerPhone = (billData) => {
   const customer = billData.customer;
-  
+
   if (!customer || typeof customer !== 'object') {
     return billData.customerPhone || billData.phone || null;
   }
-  
-  return customer.phone || 
-         customer.mobile || 
-         customer.phoneNumber || 
+
+  return customer.phone ||
+         customer.mobile ||
+         customer.phoneNumber ||
          billData.customerPhone ||
          null;
 };
@@ -185,7 +188,7 @@ const downloadBillAsTxt = async (enrichedBill, company, customerName, customerPh
   // Build the plain text receipt string (similar to buildReceiptString but without ESC/POS commands)
   const LINE_WIDTH = 48;
   const SEPARATOR = "-".repeat(LINE_WIDTH);
-  
+
   const formatLine = (left, right) => {
     const l = String(left);
     const r = String(right);
@@ -194,19 +197,19 @@ const downloadBillAsTxt = async (enrichedBill, company, customerName, customerPh
     const spaces = " ".repeat(leftSpace);
     return l + spaces + r;
   };
-  
+
   const centerText = (text) => {
     const s = String(text);
     const pad = Math.max(0, Math.floor((LINE_WIDTH - s.length) / 2));
     return " ".repeat(pad) + s;
   };
-  
+
   // Define column widths
   const COL_ITEM = 25;
   const COL_QTY = 5;
   const COL_PRICE = 8;
   const COL_TOTAL = 10;
-  
+
   const buildHeaderRow = () => {
     const itemHeader = safePad("Item", COL_ITEM);
     const qtyHeader = safePadStart("Qty", COL_QTY);
@@ -214,33 +217,33 @@ const downloadBillAsTxt = async (enrichedBill, company, customerName, customerPh
     const totalHeader = safePadStart("Total", COL_TOTAL);
     return itemHeader + qtyHeader + priceHeader + totalHeader;
   };
-  
+
   const buildItemRow = (name, qty, price, total) => {
     let nameStr = String(name || "");
     let qtyStr = String(qty);
     let priceStr = fmt(price);
     let totalStr = fmt(total);
-    
+
     if (nameStr.length > COL_ITEM) {
       nameStr = nameStr.substring(0, COL_ITEM - 3) + "...";
     }
-    
+
     nameStr = safePad(nameStr, COL_ITEM);
-    
+
     const qtyLen = qtyStr.length;
     const qtyPadding = Math.max(0, COL_QTY - qtyLen);
     const qtyLeftPad = Math.floor(qtyPadding / 2);
     const qtyRightPad = Math.max(0, qtyPadding - qtyLeftPad);
     qtyStr = " ".repeat(qtyLeftPad) + qtyStr + " ".repeat(qtyRightPad);
-    
+
     priceStr = safePadStart(priceStr, COL_PRICE);
     totalStr = safePadStart(totalStr, COL_TOTAL);
-    
+
     return nameStr + qtyStr + priceStr + totalStr;
   };
-  
+
   let receiptText = "";
-  
+
   // Header
   receiptText += centerText(company?.companyPrintOutName || company?.companyName || "YOUR SHOP NAME") + "\n";
   if (company?.headerLine1) receiptText += centerText(company.headerLine1) + "\n";
@@ -254,13 +257,13 @@ const downloadBillAsTxt = async (enrichedBill, company, customerName, customerPh
   receiptText += SEPARATOR + "\n";
   receiptText += buildHeaderRow() + "\n";
   receiptText += SEPARATOR + "\n";
-  
+
   // Items
   let calculatedSubtotal = 0;
   if (enrichedBill.items && enrichedBill.items.length > 0) {
     for (const item of enrichedBill.items) {
       let displayName = "";
-      
+
       if (item.tamilName && item.tamilName.trim()) {
         displayName = item.tamilName.trim();
       } else if (item.name && item.name.trim()) {
@@ -268,23 +271,23 @@ const downloadBillAsTxt = async (enrichedBill, company, customerName, customerPh
       } else {
         displayName = "Unknown Item";
       }
-      
+
       const itemTotal = item.price * item.quantity;
       calculatedSubtotal += itemTotal;
-      
+
       receiptText += buildItemRow(displayName, item.quantity, item.price, itemTotal) + "\n";
     }
   } else {
     receiptText += centerText("No items found") + "\n";
   }
-  
+
   // Totals
   receiptText += SEPARATOR + "\n";
   if (Math.abs(calculatedSubtotal - subtotal) > 0.01)
     receiptText += formatLine("Subtotal:", fmt(calculatedSubtotal)) + "\n";
   if (enrichedBill.discount)
     receiptText += formatLine(`Discount (${enrichedBill.discount}%):`, `-${fmt(discountAmount)}`) + "\n";
-  
+
   const finalTotal = total || calculatedSubtotal - discountAmount;
   receiptText += formatLine("TOTAL:", fmt(finalTotal)) + "\n";
   receiptText += SEPARATOR + "\n";
@@ -292,7 +295,7 @@ const downloadBillAsTxt = async (enrichedBill, company, customerName, customerPh
   receiptText += formatLine("Paid:", fmt(paid)) + "\n";
   if (due > 0) receiptText += formatLine("Due:", fmt(due)) + "\n";
   receiptText += SEPARATOR + "\n";
-  
+
   // Footer
   if (company?.footer) {
     for (const line of company.footer.split("\n")) {
@@ -305,14 +308,14 @@ const downloadBillAsTxt = async (enrichedBill, company, customerName, customerPh
     receiptText += centerText("Powered by Bill Mate POS System") + "\n";
   }
   receiptText += SEPARATOR + "\n";
-  
+
   // Create and download the file using bill number as filename
   // Clean the bill number to remove any invalid filename characters
   let billNumber = String(enrichedBill._id || "bill");
   // Replace any characters that might be invalid in filenames
   billNumber = billNumber.replace(/[\\/:*?"<>|]/g, '_');
   const fileName = `${billNumber}.txt`;
-  
+
   const blob = new Blob([receiptText], { type: 'text/plain;charset=utf-8' });
   const link = document.createElement('a');
   const url = URL.createObjectURL(blob);
@@ -322,7 +325,7 @@ const downloadBillAsTxt = async (enrichedBill, company, customerName, customerPh
   link.click();
   document.body.removeChild(link);
   URL.revokeObjectURL(url);
-  
+
   console.log(`Bill downloaded as: ${fileName}`);
 };
 
@@ -333,7 +336,7 @@ const printViaWebBrowser = (receiptHtml, onClose) => {
     alert("Please allow pop-ups to print the bill");
     return;
   }
-  
+
   printWindow.document.write(`
     <!DOCTYPE html>
     <html>
@@ -346,7 +349,7 @@ const printViaWebBrowser = (receiptHtml, onClose) => {
           padding: 0;
           box-sizing: border-box;
         }
-        
+
         @media print {
           @page {
             size: 80mm auto;
@@ -369,7 +372,7 @@ const printViaWebBrowser = (receiptHtml, onClose) => {
             width: 100%;
           }
         }
-        
+
         body {
           font-family: 'Courier New', Courier, monospace;
           background: #fff;
@@ -380,7 +383,7 @@ const printViaWebBrowser = (receiptHtml, onClose) => {
           align-items: center;
           min-height: 100vh;
         }
-        
+
         .print-container {
           width: 80mm;
           max-width: 80mm;
@@ -388,7 +391,7 @@ const printViaWebBrowser = (receiptHtml, onClose) => {
           background: white;
           box-shadow: 0 0 10px rgba(0,0,0,0.1);
         }
-        
+
         .preview-receipt {
           font-family: 'Courier New', Courier, monospace;
           font-size: 12px;
@@ -399,13 +402,13 @@ const printViaWebBrowser = (receiptHtml, onClose) => {
           background: white;
           font-weight: bold;
         }
-        
+
         /* Make text darker and bolder for thermal printers */
         .preview-receipt * {
           font-weight: bold;
           color: #000;
         }
-        
+
         .preview-receipt .p-shop {
           font-size: 16px;
           font-weight: bold;
@@ -413,23 +416,23 @@ const printViaWebBrowser = (receiptHtml, onClose) => {
           margin-bottom: 5px;
           letter-spacing: 1px;
         }
-        
+
         .preview-receipt .p-sub {
           text-align: center;
           font-size: 11px;
           font-weight: bold;
         }
-        
+
         .preview-receipt .p-div {
           border-top: 1px dashed #000;
           margin: 4px 0;
         }
-        
+
         .preview-receipt .p-div-solid {
           border-top: 1px solid #000;
           margin: 4px 0;
         }
-        
+
         .preview-receipt .kv {
           display: flex;
           justify-content: space-between;
@@ -437,95 +440,95 @@ const printViaWebBrowser = (receiptHtml, onClose) => {
           font-weight: bold;
           margin: 2px 0;
         }
-        
+
         .preview-receipt .kv .v {
           text-align: right;
           word-break: break-word;
         }
-        
+
         .preview-receipt .items-tbl {
           width: 100%;
           border-collapse: collapse;
           font-size: 11px;
           font-weight: bold;
         }
-        
+
         .preview-receipt .items-tbl th,
         .preview-receipt .items-tbl td {
           padding: 2px 1px;
           text-align: right;
           font-weight: bold;
         }
-        
+
         .preview-receipt .items-tbl th:first-child,
         .preview-receipt .items-tbl td:first-child {
           text-align: left;
           width: 52%;
         }
-        
+
         .preview-receipt .items-tbl th:nth-child(2),
         .preview-receipt .items-tbl td:nth-child(2) {
           width: 12%;
           text-align: right;
           padding-right: 2px;
         }
-        
+
         .preview-receipt .items-tbl th:nth-child(3),
         .preview-receipt .items-tbl td:nth-child(3) {
           width: 16%;
           text-align: right;
           padding-right: 2px;
         }
-        
+
         .preview-receipt .items-tbl th:nth-child(4),
         .preview-receipt .items-tbl td:nth-child(4) {
           width: 20%;
           text-align: right;
         }
-        
+
         .preview-receipt .items-tbl thead th {
           font-weight: bold;
           border-bottom: 1px dashed #000;
           padding-bottom: 3px;
         }
-        
+
         .preview-receipt .totals-tbl {
           width: 100%;
           border-collapse: collapse;
           font-size: 12px;
           font-weight: bold;
         }
-        
+
         .preview-receipt .totals-tbl td {
           padding: 2px 0;
         }
-        
+
         .preview-receipt .totals-tbl .tl {
           text-align: left;
         }
-        
+
         .preview-receipt .totals-tbl .tv {
           text-align: right;
         }
-        
+
         .preview-receipt .grand td {
           font-weight: bold;
           font-size: 14px;
           padding-top: 3px;
         }
-        
+
         .preview-receipt .p-footer {
           text-align: center;
           font-size: 11px;
           font-weight: bold;
           margin: 3px 0;
         }
-        
+
         .preview-receipt .p-powered {
           font-size: 10px;
           color: #333;
         }
-        
+
         button {
           margin: 10px auto;
           padding: 12px 24px;
@@ -539,16 +542,16 @@ const printViaWebBrowser = (receiptHtml, onClose) => {
           width: 90%;
           display: block;
         }
-        
+
         button:hover {
           background: #45a049;
         }
-        
+
         .close-btn {
           background: #666;
           margin-bottom: 20px;
         }
-        
+
         .close-btn:hover {
           background: #555;
         }
@@ -565,7 +568,7 @@ const printViaWebBrowser = (receiptHtml, onClose) => {
           window.print();
           setTimeout(() => {
             if (window.opener) {
-              const searchInput = window.opener.document.getElementById('item-search') || 
+              const searchInput = window.opener.document.getElementById('item-search') ||
                                  window.opener.document.querySelector('input[placeholder*="search"]') ||
                                  window.opener.document.querySelector('input[type="text"]');
               if (searchInput) {
@@ -580,9 +583,9 @@ const printViaWebBrowser = (receiptHtml, onClose) => {
     </html>
   `);
   printWindow.document.close();
-  
+
   setTimeout(() => {
-    const searchInput = document.getElementById('item-search') || 
+    const searchInput = document.getElementById('item-search') ||
                        document.querySelector('input[placeholder*="search"]') ||
                        document.querySelector('input[type="text"]');
     if (searchInput) {
@@ -591,51 +594,698 @@ const printViaWebBrowser = (receiptHtml, onClose) => {
   }, 100);
 };
 
+// A5 Landscape print method — formal invoice-style layout for standard printers
+const printViaA5Landscape = ({
+  enrichedBill,
+  company,
+  customerName,
+  customerPhone,
+  formattedDate,
+  fmt,
+  subtotal,
+  discountAmount,
+  total,
+  paid,
+  due,
+  onClose
+}) => {
+  const printWindow = window.open('', '_blank', 'width=1000,height=700,toolbars=yes,scrollbars=yes');
+  if (!printWindow) {
+    alert("Please allow pop-ups to print the bill");
+    return;
+  }
+
+  const ACCENT = "#4f8a72";
+  const ACCENT_LIGHT = "#eef4f1";
+  const TEXT_DARK = "#1f2937";
+  const TEXT_MUTED = "#6b7280";
+
+  // ---- Build normalized item list (name resolution + totals) ----
+  let calculatedSubtotal = 0;
+  const normalizedItems = (enrichedBill.items || []).map((item, index) => {
+    let displayName = "";
+    if (item.tamilName && item.tamilName.trim()) {
+      displayName = item.tamilName.trim();
+    } else if (item.name && item.name.trim()) {
+      displayName = item.name.trim();
+    } else {
+      displayName = "Unknown Item";
+    }
+    const itemTotal = item.price * item.quantity;
+    calculatedSubtotal += itemTotal;
+    return {
+      sno: index + 1,
+      qty: item.quantity,
+      name: displayName,
+      price: fmt(item.price),
+      total: fmt(itemTotal)
+    };
+  });
+
+  const finalTotal = total || calculatedSubtotal - discountAmount;
+  const taxOrDiscountLabel = enrichedBill.discount
+    ? `Discount (${enrichedBill.discount}%)`
+    : null;
+
+  // Due date: 14 days after bill date if not explicitly present on the bill
+  const billDateObj = new Date(enrichedBill.date || enrichedBill.createdAt || enrichedBill.billDate || Date.now());
+  const dueDateObj = enrichedBill.dueDate
+    ? new Date(enrichedBill.dueDate)
+    : new Date(billDateObj.getTime() + 14 * 24 * 60 * 60 * 1000);
+  const dueDateFormatted = dueDateObj.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
+
+  const companyName = company?.companyPrintOutName || company?.companyName || "Your Company";
+  const companyAddressLines = [company?.headerLine1, company?.headerLine2, company?.headerLine3].filter(Boolean);
+
+  // Get payment method
+  const paymentMethod = (enrichedBill.paymentMethod || "CASH").toUpperCase();
+
+  // ---- Static HTML fragments (identical on every page) ----
+  const headerHtml = `
+    <table class="header-table">
+      <tr>
+        <td>
+          <div class="company-name">${escHtml(companyName)}</div>
+          <div class="company-address">
+            ${companyAddressLines.map(l => escHtml(l)).join("<br>")}
+          </div>
+        </td>
+      </tr>
+    </table>
+
+    <div class="invoice-title">INVOICE</div>
+
+    <table class="meta-table">
+      <tr>
+        <td>
+          <div class="bill-to-label">Bill To</div>
+          <div class="bill-to-name">${escHtml(customerName)}</div>
+          ${customerPhone ? `<div class="bill-to-detail">Phone: ${escHtml(String(customerPhone))}</div>` : ""}
+        </td>
+        <td class="invoice-meta">
+          <div class="invoice-meta-row">
+            <span class="invoice-meta-label">Invoice #</span>
+            <span class="invoice-meta-value">${escHtml(String(enrichedBill.billNumber))}</span>
+          </div>
+          <div class="invoice-meta-row">
+            <span class="invoice-meta-label">Invoice date</span>
+            <span class="invoice-meta-value">${formattedDate}</span>
+          </div>
+        </td>
+      </tr>
+    </table>
+  `;
+
+  const contNoteHtml = `<div class="cont-note">(continued)</div>`;
+
+  // Table header: S.No | Description | QTY | Unit Price | Amount
+  const theadHtml = `
+    <tr>
+      <th class="col-sno">S.No</th>
+      <th class="col-desc">Description</th>
+      <th class="col-qty">QTY</th>
+      <th class="col-price">Unit Price</th>
+      <th class="col-amount">Amount</th>
+    </tr>
+  `;
+
+  // Updated totals footer - includes payment method
+  const totalsFooterHtml = `
+    <div class="totals-block">
+      ${Math.abs(calculatedSubtotal - subtotal) > 0.01
+        ? `<div class="totals-row"><span>Subtotal</span><span>${fmt(calculatedSubtotal)}</span></div>`
+        : ""}
+      ${taxOrDiscountLabel ? `<div class="totals-row"><span>${escHtml(taxOrDiscountLabel)}</span><span>-${fmt(discountAmount)}</span></div>` : ""}
+      <div class="totals-row grand"><span>TOTAL</span><span>${fmt(finalTotal)}</span></div>
+      <div class="totals-row"><span>Payment</span><span>${escHtml(paymentMethod)}</span></div>
+      <div class="totals-row"><span>Paid</span><span>${fmt(paid)}</span></div>
+      ${due > 0 ? `<div class="totals-row"><span>Due</span><span>${fmt(due)}</span></div>` : ""}
+    </div>
+    <div class="footer-block">
+      <div class="terms-label">Terms and Conditions</div>
+      <div class="terms-text">
+        ${company?.footer
+          ? company.footer.split("\n").filter(l => l.trim()).map(l => escHtml(l.trim())).join("<br>")
+          : `Goods once sold cannot be returned.`}
+      </div>
+    </div>
+  `;
+
+  const itemsJson = JSON.stringify(
+    normalizedItems.map(r => ({
+      sno: r.sno,
+      qty: r.qty,
+      name: escHtml(r.name),
+      price: escHtml(r.price),
+      total: escHtml(r.total)
+    }))
+  ).replace(/</g, "\\u003c");
+
+  const headerHtmlJs = JSON.stringify(headerHtml).replace(/</g, "\\u003c");
+  const contNoteHtmlJs = JSON.stringify(contNoteHtml).replace(/</g, "\\u003c");
+  const theadHtmlJs = JSON.stringify(theadHtml).replace(/</g, "\\u003c");
+  const totalsFooterHtmlJs = JSON.stringify(totalsFooterHtml).replace(/</g, "\\u003c");
+
+  const html = `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <title>Invoice - ${escHtml(String(enrichedBill.billNumber))}</title>
+      <meta charset="UTF-8">
+      <style>
+        * {
+          margin: 0;
+          padding: 0;
+          box-sizing: border-box;
+        }
+
+        @page {
+          size: A5 landscape;
+          margin: 0;
+        }
+
+        body {
+          font-family: 'Segoe UI', Arial, sans-serif;
+          background: #ddd;
+          padding: 20px;
+        }
+
+        .print-container {
+          display: block;
+        }
+
+        .a5-page {
+          width: 210mm;
+          min-height: 148mm;
+          background: white;
+          box-shadow: 0 0 12px rgba(0,0,0,0.2);
+          padding: 8mm 10mm;
+          margin: 0 auto 20px auto;
+          position: relative;
+        }
+
+        .measure-box {
+          position: absolute;
+          left: -99999px;
+          top: 0;
+          visibility: hidden;
+          width: 190mm;
+        }
+
+        .header-table {
+          width: 100%;
+          border-collapse: collapse;
+        }
+
+        .header-table td {
+          padding: 0;
+          vertical-align: top;
+        }
+
+        .company-name {
+          font-size: 15px;
+          font-weight: 700;
+          color: ${TEXT_DARK};
+          margin-bottom: 3px;
+        }
+
+        .company-address {
+          font-size: 10px;
+          color: ${TEXT_MUTED};
+          line-height: 1.4;
+        }
+
+        .invoice-title {
+          text-align: center;
+          font-size: 20px;
+          font-weight: 800;
+          letter-spacing: 3px;
+          color: ${ACCENT};
+          padding: 4px 0 8px;
+        }
+
+        .meta-table {
+          width: 100%;
+          border-collapse: collapse;
+          margin-bottom: 8px;
+          padding-bottom: 8px;
+          border-bottom: 1px solid #e5e7eb;
+        }
+
+        .meta-table td {
+          padding: 0;
+          vertical-align: top;
+        }
+
+        .bill-to-label {
+          font-size: 10px;
+          font-weight: 700;
+          color: ${ACCENT};
+          text-transform: uppercase;
+          letter-spacing: 0.5px;
+          margin-bottom: 2px;
+        }
+
+        .bill-to-name {
+          font-size: 13px;
+          font-weight: 700;
+          color: ${TEXT_DARK};
+          margin-bottom: 2px;
+        }
+
+        .bill-to-detail {
+          font-size: 10px;
+          color: ${TEXT_MUTED};
+          line-height: 1.4;
+        }
+
+        .invoice-meta {
+          text-align: right;
+        }
+
+        .invoice-meta-row {
+          font-size: 10.5px;
+          margin-bottom: 3px;
+        }
+
+        .invoice-meta-label {
+          font-weight: 700;
+          color: ${ACCENT};
+        }
+
+        .invoice-meta-value {
+          color: ${TEXT_DARK};
+          display: inline-block;
+          min-width: 75px;
+          text-align: right;
+        }
+
+        .cont-note {
+          font-size: 9px;
+          font-style: italic;
+          color: ${TEXT_MUTED};
+          text-align: right;
+          margin-bottom: 4px;
+        }
+
+        table.items-table {
+          width: 100%;
+          border-collapse: collapse;
+          font-size: 10.5px;
+          margin-bottom: 6px;
+        }
+
+        table.items-table thead th {
+          background: ${ACCENT};
+          color: white;
+          font-weight: 700;
+          text-align: left;
+          padding: 6px 8px;
+          border: none;
+        }
+
+        table.items-table thead th.col-sno {
+          width: 6%;
+          text-align: center;
+        }
+        table.items-table thead th.col-desc {
+          width: 42%;
+          text-align: left;
+        }
+        table.items-table thead th.col-qty {
+          width: 8%;
+          text-align: center;
+        }
+        table.items-table thead th.col-price {
+          width: 20%;
+          text-align: right;
+        }
+        table.items-table thead th.col-amount {
+          width: 24%;
+          text-align: right;
+        }
+
+        table.items-table tbody td {
+          padding: 5px 8px;
+          border-bottom: 1px solid #e5e7eb;
+          color: ${TEXT_DARK};
+        }
+
+        table.items-table tbody td.col-sno {
+          text-align: center;
+        }
+        table.items-table tbody td.col-desc {
+          text-align: left;
+          word-break: break-word;
+        }
+        table.items-table tbody td.col-qty {
+          text-align: center;
+        }
+        table.items-table tbody td.col-price,
+        table.items-table tbody td.col-amount {
+          text-align: right;
+        }
+
+        .totals-block {
+          margin-left: auto;
+          width: 45%;
+          font-size: 10.5px;
+          margin-top: 4px;
+        }
+
+        .totals-row {
+          display: flex;
+          justify-content: space-between;
+          padding: 4px 8px;
+          color: ${TEXT_DARK};
+        }
+
+        .totals-row.grand {
+          background: ${ACCENT_LIGHT};
+          font-weight: 800;
+          font-size: 12px;
+          color: ${ACCENT};
+          border-top: 1px solid ${ACCENT};
+          margin-top: 2px;
+          margin-bottom: 2px;
+        }
+
+        .footer-block {
+          margin-top: 10px;
+          padding-top: 8px;
+          border-top: 1px solid #e5e7eb;
+        }
+
+        .terms-label {
+          font-size: 10px;
+          font-weight: 700;
+          color: ${ACCENT};
+          text-transform: uppercase;
+          margin-bottom: 3px;
+        }
+
+        .terms-text {
+          font-size: 9.5px;
+          color: ${TEXT_MUTED};
+          line-height: 1.4;
+        }
+
+        /* Page number styling - bottom right */
+        .page-number {
+          position: absolute;
+          bottom: 5mm;
+          right: 10mm;
+          font-size: 9px;
+          color: ${TEXT_MUTED};
+          font-weight: 400;
+        }
+
+        .btn-row {
+          display: flex;
+          gap: 10px;
+          justify-content: center;
+        }
+
+        button {
+          padding: 12px 24px;
+          background: #6d28d9;
+          color: white;
+          border: none;
+          border-radius: 5px;
+          cursor: pointer;
+          font-size: 14px;
+          font-weight: bold;
+        }
+
+        button:hover { background: #5b21b6; }
+        .close-btn { background: #666; }
+        .close-btn:hover { background: #555; }
+
+        #status-msg {
+          font-family: 'Segoe UI', Arial, sans-serif;
+          font-size: 13px;
+          color: #666;
+          text-align: center;
+          padding: 40px;
+        }
+
+        @media print {
+          body {
+            margin: 0;
+            padding: 0;
+            background: white;
+          }
+          .no-print {
+            display: none !important;
+          }
+          .print-container {
+            display: block;
+          }
+          .a5-page {
+            box-shadow: none !important;
+            margin: 0 !important;
+            page-break-after: always;
+          }
+          .a5-page.last-page {
+            page-break-after: auto;
+          }
+          table.items-table tr {
+            page-break-inside: avoid;
+            break-inside: avoid;
+          }
+          .totals-block,
+          .footer-block {
+            page-break-inside: avoid;
+            break-inside: avoid;
+          }
+        }
+      </style>
+    </head>
+    <body>
+      <div class="print-container">
+        <div id="status-msg" class="no-print">Preparing invoice…</div>
+        <div id="pages-container"></div>
+        <div class="btn-row no-print" id="btn-row" style="display:none;">
+          <button id="manual-print-btn">🖨️ Print (A5 Landscape)</button>
+          <button onclick="window.close()" class="close-btn">Close</button>
+        </div>
+      </div>
+      <script>
+        (async function () {
+          const ITEMS = ${itemsJson};
+          const HEADER_HTML = ${headerHtmlJs};
+          const CONT_NOTE_HTML = ${contNoteHtmlJs};
+          const THEAD_HTML = ${theadHtmlJs};
+          const TOTALS_FOOTER_HTML = ${totalsFooterHtmlJs};
+
+          const MM_TO_PX = 96 / 25.4;
+          const PAGE_HEIGHT_MM = 148;
+          const PAD_V_MM = 8;
+          const SAFETY_MM = 14; // extra buffer for print-engine rounding differences
+          const USABLE_HEIGHT_PX = (PAGE_HEIGHT_MM - PAD_V_MM * 2 - SAFETY_MM) * MM_TO_PX;
+
+          function rowHtml(item) {
+            return '<tr><td class="col-sno">' + item.sno + '</td><td class="col-desc">' + item.name +
+                   '</td><td class="col-qty">' + item.qty + '</td><td class="col-price">' + item.price +
+                   '</td><td class="col-amount">' + item.total + '</td></tr>';
+          }
+
+          function measure(html) {
+            const box = document.createElement('div');
+            box.className = 'measure-box';
+            box.innerHTML = html;
+            document.body.appendChild(box);
+            const h = box.offsetHeight;
+            document.body.removeChild(box);
+            return h;
+          }
+
+          // Wait for web fonts (incl. Tamil script fonts) to finish loading
+          // before measuring anything. Measuring against a fallback font
+          // undercounts the height of wrapped/longer lines, which was
+          // causing pages to silently overflow at print time.
+          if (document.fonts && document.fonts.ready) {
+            try { await document.fonts.ready; } catch (e) {}
+          }
+
+          const headerH = measure(HEADER_HTML);
+          const contNoteH = measure(CONT_NOTE_HTML);
+          const totalsFooterH = measure(TOTALS_FOOTER_HTML);
+
+          const theadH = (() => {
+            const box = document.createElement('div');
+            box.className = 'measure-box';
+            box.innerHTML = '<table class="items-table"><thead>' + THEAD_HTML + '</thead></table>';
+            document.body.appendChild(box);
+            const h = box.querySelector('thead').offsetHeight;
+            document.body.removeChild(box);
+            return Math.max(1, h);
+          })();
+
+          // Measure the EXACT height of every single item row instead of
+          // averaging from 1-2 sample rows. Row height varies with text
+          // length/wrapping — especially for Tamil names — so a uniform
+          // average row height was the root cause of the mispagination
+          // (pages overflowing at print time and duplicating a row onto
+          // an extra physical page).
+          const rowHeights = ITEMS.map((item) => {
+            const box = document.createElement('div');
+            box.className = 'measure-box';
+            box.innerHTML = '<table class="items-table"><tbody>' + rowHtml(item) + '</tbody></table>';
+            document.body.appendChild(box);
+            const h = box.querySelector('tr').offsetHeight;
+            document.body.removeChild(box);
+            return Math.max(1, h);
+          });
+
+          // ---- Paginate using exact per-row measured heights ----
+          const pages = [];
+          if (ITEMS.length === 0) {
+            pages.push({ items: [], isContinuation: false });
+          } else {
+            let startIdx = 0;
+            let pageIndex = 0;
+            while (startIdx < ITEMS.length) {
+              const isContinuation = pageIndex > 0;
+              const headerBudget = headerH + theadH + (isContinuation ? contNoteH : 0);
+
+              // Try to fit the rest of the items as the LAST page (header + rows + totals footer)
+              let idx = startIdx;
+              let usedAsLast = headerBudget + totalsFooterH;
+              while (idx < ITEMS.length && usedAsLast + rowHeights[idx] <= USABLE_HEIGHT_PX) {
+                usedAsLast += rowHeights[idx];
+                idx++;
+              }
+
+              if (idx >= ITEMS.length) {
+                // Everything remaining fits on this page as the final page
+                pages.push({ items: ITEMS.slice(startIdx), isContinuation });
+                startIdx = ITEMS.length;
+              } else {
+                // Doesn't fit as last page — fit as many as possible as a non-final page (no totals footer)
+                let idx2 = startIdx;
+                let usedAsNonLast = headerBudget;
+                while (idx2 < ITEMS.length && usedAsNonLast + rowHeights[idx2] <= USABLE_HEIGHT_PX) {
+                  usedAsNonLast += rowHeights[idx2];
+                  idx2++;
+                }
+                // Always take at least one row so pagination makes forward progress
+                const takeUpTo = Math.max(idx2, startIdx + 1);
+                pages.push({ items: ITEMS.slice(startIdx, takeUpTo), isContinuation });
+                startIdx = takeUpTo;
+              }
+              pageIndex++;
+            }
+          }
+
+          // ---- Build final visible pages with page numbers ----
+          const container = document.getElementById('pages-container');
+          let finalHtml = '';
+          const totalPages = pages.length;
+          
+          pages.forEach((p, idx) => {
+            const isVeryLast = idx === pages.length - 1;
+            const pageNumber = idx + 1;
+            
+            finalHtml += '<div class="a5-page' + (isVeryLast ? ' last-page' : '') + '">';
+            finalHtml += HEADER_HTML;
+            if (p.isContinuation) finalHtml += CONT_NOTE_HTML;
+            finalHtml += '<table class="items-table"><thead>' + THEAD_HTML + '</thead><tbody>' +
+                         (p.items.length > 0
+                           ? p.items.map(rowHtml).join('')
+                           : '<tr><td colspan="5" style="text-align:center;padding:14px 0;color:#6b7280;">No items found</td></tr>') +
+                         '</tbody></table>';
+            if (isVeryLast) finalHtml += TOTALS_FOOTER_HTML;
+            
+            // Add page number at bottom right
+            finalHtml += '<div class="page-number">Page ' + pageNumber + ' of ' + totalPages + '</div>';
+            
+            finalHtml += '</div>';
+          });
+          container.innerHTML = finalHtml;
+
+          document.getElementById('status-msg').style.display = 'none';
+          document.getElementById('btn-row').style.display = 'flex';
+
+          function doPrint() {
+            window.print();
+            setTimeout(() => {
+              if (window.opener) {
+                const searchInput = window.opener.document.getElementById('item-search') ||
+                                   window.opener.document.querySelector('input[placeholder*="search"]') ||
+                                   window.opener.document.querySelector('input[type="text"]');
+                if (searchInput) searchInput.focus();
+              }
+              window.close();
+            }, 1000);
+          }
+
+          document.getElementById('manual-print-btn').addEventListener('click', doPrint);
+
+          setTimeout(doPrint, 300);
+        })();
+      </script>
+    </body>
+    </html>
+  `;
+
+  printWindow.document.write(html);
+  printWindow.document.close();
+
+  setTimeout(() => {
+    const searchInput = document.getElementById('item-search') ||
+                       document.querySelector('input[placeholder*="search"]') ||
+                       document.querySelector('input[type="text"]');
+    if (searchInput) searchInput.focus();
+  }, 100);
+
+  if (typeof onClose === "function") onClose();
+};
 // Modified to accept billId instead of bill object
 export const handlePrintBill = async (billId, onClose) => {
   console.log("Fetching bill details for ID:", billId);
   const fetchedBill = await fetchBillDetails(billId);
-  
+
   if (!fetchedBill) {
     console.error("Failed to fetch bill details");
     alert("Could not load bill details. Please try again.");
     if (typeof onClose === "function") onClose();
     return;
   }
-  
+
   console.log("Fetched bill details:", fetchedBill);
-  
+
   console.log("Customer data structure:", fetchedBill.customer);
   console.log("Customer type:", typeof fetchedBill.customer);
   if (fetchedBill.customer && typeof fetchedBill.customer === 'object') {
     console.log("Customer object keys:", Object.keys(fetchedBill.customer));
     console.log("Full customer object:", JSON.stringify(fetchedBill.customer, null, 2));
   }
-  
+
   const company = await fetchCompanyDetails();
   const companyId = localStorage.getItem("companyId");
 
   let enrichedItems = fetchedBill.items || [];
-  
+
   if (enrichedItems.length > 0) {
     console.log("Fetching fresh product details...");
     enrichedItems = await enrichBillItemsWithProductDetails(enrichedItems, companyId);
   }
-  
+
   const enrichedBill = { ...fetchedBill, items: enrichedItems };
 
   // Calculate totals
   const subtotal = enrichedBill.subtotal || enrichedBill.items?.reduce((s, i) => s + (i.price * i.quantity), 0) || 0;
   const discountAmount = enrichedBill.discountAmount || 0;
   const total = enrichedBill.total || (subtotal - discountAmount);
-  
+
   const paidOriginal = enrichedBill.paidOriginal || enrichedBill.paidAmount || 0;
   const paidFromHistory = enrichedBill.paidFromHistory || 0;
   const paid = paidOriginal + paidFromHistory;
   const due = Math.max(0, total - paid);
-  
+
   console.log("Payment calculation:", { subtotal, discountAmount, total, paidOriginal, paidFromHistory, paid, due });
-  
+
   const fmt = (n) => Number(n).toFixed(2);
 
   const printDate = new Date(enrichedBill.date || enrichedBill.createdAt || enrichedBill.billDate || Date.now());
@@ -644,7 +1294,7 @@ export const handlePrintBill = async (billId, onClose) => {
 
   const customerName = getCustomerName(enrichedBill);
   const customerPhone = getCustomerPhone(enrichedBill);
-  
+
   console.log("Final customer name:", customerName);
   console.log("Final customer phone:", customerPhone);
 
@@ -690,29 +1340,29 @@ export const handlePrintBill = async (billId, onClose) => {
     let qtyStr = String(qty);
     let priceStr = fmt(price);
     let totalStr = fmt(total);
-    
+
     // Truncate name if too long
     if (nameStr.length > COL_ITEM) {
       nameStr = nameStr.substring(0, COL_ITEM - 3) + "...";
     }
-    
+
     // Pad to exact widths
     nameStr = safePad(nameStr, COL_ITEM);
-    
+
     // Center align quantity
     const qtyLen = qtyStr.length;
     const qtyPadding = Math.max(0, COL_QTY - qtyLen);
     const qtyLeftPad = Math.floor(qtyPadding / 2);
     const qtyRightPad = Math.max(0, qtyPadding - qtyLeftPad);
     qtyStr = " ".repeat(qtyLeftPad) + qtyStr + " ".repeat(qtyRightPad);
-    
+
     // Right align price and total
     priceStr = safePadStart(priceStr, COL_PRICE);
     totalStr = safePadStart(totalStr, COL_TOTAL);
-    
+
     return nameStr + qtyStr + priceStr + totalStr;
   };
-  
+
   // Helper function for centering text
   const centerText = (text) => {
     const s = String(text);
@@ -722,7 +1372,7 @@ export const handlePrintBill = async (billId, onClose) => {
 
   const buildReceiptString = () => {
     let receipt = "";
-    
+
     // Header
     receipt += FONT_NORMAL;
     receipt += ALIGN_CENTER;
@@ -798,7 +1448,7 @@ export const handlePrintBill = async (billId, onClose) => {
     receipt += SEPARATOR + "\n";
     receipt += ALIGN_LEFT;
     receipt += PAPER_CUT;
-    
+
     return receipt;
   };
 
@@ -811,16 +1461,16 @@ export const handlePrintBill = async (billId, onClose) => {
       if (!printer) throw new Error("No default printer found via QZ Tray");
       const config = window.qz.configs.create(printer, { encoding: "ISO_8859_1", copies: 1 });
       await window.qz.print(config, [{ type: "raw", format: "plain", data: receiptString }]);
-      
+
       setTimeout(() => {
-        const searchInput = document.getElementById('item-search') || 
+        const searchInput = document.getElementById('item-search') ||
                            document.querySelector('input[placeholder*="search"]') ||
                            document.querySelector('input[type="text"]');
         if (searchInput) {
           searchInput.focus();
         }
       }, 100);
-      
+
       if (typeof onClose === "function") onClose();
     } catch (err) {
       console.error("QZ Tray print failed:", err);
@@ -845,16 +1495,16 @@ export const handlePrintBill = async (billId, onClose) => {
       if (!rawBTLaunched) {
         rawBTLaunched = true;
         cleanup();
-        
+
         setTimeout(() => {
-          const searchInput = document.getElementById('item-search') || 
+          const searchInput = document.getElementById('item-search') ||
                              document.querySelector('input[placeholder*="search"]') ||
                              document.querySelector('input[type="text"]');
           if (searchInput) {
             searchInput.focus();
           }
         }, 100);
-        
+
         setTimeout(() => {
           if (typeof onClose === "function") onClose();
         }, 500);
@@ -980,29 +1630,29 @@ export const handlePrintBill = async (billId, onClose) => {
             size: 80mm auto;
             margin: 0mm;
           }
-          
+
           body {
             margin: 0;
             padding: 0;
           }
-          
+
           .preview-receipt {
             margin: 0;
             padding: 2mm;
             width: 100%;
           }
-          
+
           /* Force print styles */
           .p-qty {
             text-align: center !important;
             text-align-last: center !important;
           }
-          
+
           .items-tbl td.p-qty {
             text-align: center !important;
           }
         }
-        
+
         .preview-receipt {
           font-family: 'Courier New', monospace;
           font-size: 12px;
@@ -1110,13 +1760,13 @@ export const handlePrintBill = async (billId, onClose) => {
         .p-powered {
           font-size: 10px;
         }
-        
+
         /* Additional print-specific styles */
         @media print {
           .p-qty {
             text-align: center !important;
           }
-          
+
           .items-tbl td.p-qty {
             text-align: center !important;
           }
@@ -1153,11 +1803,11 @@ export const handlePrintBill = async (billId, onClose) => {
         <div class="p-div"></div>
 
         <table class="totals-tbl">
-          ${Math.abs(calculatedSubtotal - subtotal) > 0.01 
-            ? `<tr><td class="tl">Subtotal</td><td class="tv">${fmt(calculatedSubtotal)}</td></tr>` 
+          ${Math.abs(calculatedSubtotal - subtotal) > 0.01
+            ? `<tr><td class="tl">Subtotal</td><td class="tv">${fmt(calculatedSubtotal)}</td></tr>`
             : ""}
-          ${enrichedBill.discount 
-            ? `<tr><td class="tl">Discount (${enrichedBill.discount}%)</td><td class="tv">-${fmt(discountAmount)}</td></tr>` 
+          ${enrichedBill.discount
+            ? `<tr><td class="tl">Discount (${enrichedBill.discount}%)</td><td class="tv">-${fmt(discountAmount)}</td></tr>`
             : ""}
         </table>
 
@@ -1204,21 +1854,26 @@ const showPreviewModal = () => {
   if (isMobile) {
     printButtons += `<button id="bpm-rawbt" style="${btnBase}background:#2c3e50;color:white;border:2px solid #1a2632;box-shadow:0 0 0 3px rgba(44,62,80,0.3);">🖨️ Print Bill</button>`;
     console.log("Mobile mode - Showing only RawBT button");
-  } 
-  // For Desktop users: Show Download TXT, Web Print, and QZ Tray
+  }
+  // For Desktop users: Show Download TXT, (optionally) Web Print, A5 Landscape, and QZ Tray
   else {
     // Add Download TXT option for desktop
     printButtons += `<button id="bpm-download" style="${btnBase}background:#FF9800;color:white;border:2px solid #F57C00;box-shadow:0 0 0 3px rgba(255,152,0,0.3);">📄 1. Download TXT</button>`;
-    
-    // Add Web Print option for desktop
-    printButtons += `<button id="bpm-web" style="${btnBase}background:#2196F3;color:white;border:2px solid #0b7dda;">🌐 2. Web Print</button>`;
-    
+
+    // Add Web Print option for desktop — controlled by SHOW_WEB_PRINT
+    if (SHOW_WEB_PRINT) {
+      printButtons += `<button id="bpm-web" style="${btnBase}background:#2196F3;color:white;border:2px solid #0b7dda;">🌐 2. Web Print</button>`;
+    }
+
+    // Add A5 Landscape option for desktop
+    printButtons += `<button id="bpm-a5" style="${btnBase}background:#6d28d9;color:white;border:2px solid #5b21b6;">📃 ${SHOW_WEB_PRINT ? '3' : '2'}. A5 Landscape</button>`;
+
     // Add QZ Tray button for desktop (only if available)
     if (hasQZTray) {
-      printButtons += `<button id="bpm-qz" style="${btnBase}background:#0f766e;color:white;border:2px solid #0a5c55;">🖨️ 3. QZ Tray</button>`;
-      console.log("Desktop mode - Showing Download TXT, Web Print, and QZ Tray");
+      printButtons += `<button id="bpm-qz" style="${btnBase}background:#0f766e;color:white;border:2px solid #0a5c55;">🖨️ ${SHOW_WEB_PRINT ? '4' : '3'}. QZ Tray</button>`;
+      console.log("Desktop mode - Showing Download TXT" + (SHOW_WEB_PRINT ? ", Web Print" : "") + ", A5 Landscape, and QZ Tray");
     } else {
-      console.log("Desktop mode - Showing Download TXT and Web Print only (QZ Tray not available)");
+      console.log("Desktop mode - Showing Download TXT" + (SHOW_WEB_PRINT ? ", Web Print" : "") + ", and A5 Landscape only (QZ Tray not available)");
     }
   }
 
@@ -1248,49 +1903,56 @@ const showPreviewModal = () => {
     #bpm-qz:hover { background:#0a5c55 !important; transform:translateY(-2px); }
     #bpm-web:hover { background:#0b7dda !important; transform:translateY(-2px); }
     #bpm-download:hover { background:#F57C00 !important; transform:translateY(-2px); }
+    #bpm-a5:hover { background:#5b21b6 !important; transform:translateY(-2px); }
     #bpm-cancel:hover { background:#e8e8e8 !important; }
-    
+
     /* Focus styles for better visibility */
     #bpm-rawbt:focus {
       outline: none;
       box-shadow: 0 0 0 3px rgba(44,62,80,0.5);
       transform: scale(1.02);
     }
-    
+
     #bpm-download:focus {
       outline: none;
       box-shadow: 0 0 0 3px rgba(255,152,0,0.5);
       transform: scale(1.02);
     }
-    
+
     #bpm-web:focus {
       outline: none;
       box-shadow: 0 0 0 3px rgba(33,150,243,0.5);
       transform: scale(1.02);
     }
-    
+
+    #bpm-a5:focus {
+      outline: none;
+      box-shadow: 0 0 0 3px rgba(109,40,217,0.5);
+      transform: scale(1.02);
+    }
+
     #bpm-qz:focus {
       outline: none;
       box-shadow: 0 0 0 3px rgba(15,118,110,0.5);
       transform: scale(1.02);
     }
-    
+
     @keyframes pulse {
       0% { transform: scale(1); }
       50% { transform: scale(1.05); }
       100% { transform: scale(1); }
     }
-    
+
     /* Add pulse animation only for mobile RawBT button */
     #bpm-rawbt {
       animation: pulse 1s ease-in-out 2;
     }
-    
+
     /* Add pulse animation for desktop download button */
     #bpm-download {
       animation: pulse 1s ease-in-out 2;
     }
-    
+
     /* Mobile-specific button adjustments */
     @media (max-width: 480px) {
       button {
@@ -1306,14 +1968,14 @@ const showPreviewModal = () => {
     document.getElementById("bill-preview-modal")?.remove();
     document.removeEventListener("keydown", handleKeyDown);
   };
-  
-  // IMPROVED: Keyboard handler with number shortcuts (1,2,3)
+
+  // IMPROVED: Keyboard handler with number shortcuts, adjusted for whether Web Print is shown
   const handleKeyDown = (e) => {
     if (e.key === "Escape") {
       e.preventDefault();
       closeModal();
     }
-    
+
     // Number shortcuts for quick printing (Desktop only)
     if (!isMobile) {
       if (e.key === "1") {
@@ -1325,8 +1987,8 @@ const showPreviewModal = () => {
         }
         return;
       }
-      
-      if (e.key === "2") {
+
+      if (SHOW_WEB_PRINT && e.key === "2") {
         e.preventDefault();
         console.log("Shortcut 2: Web Print");
         const webBtn = document.getElementById("bpm-web");
@@ -1335,10 +1997,20 @@ const showPreviewModal = () => {
         }
         return;
       }
-      
-      if (e.key === "3") {
+
+      if (e.key === (SHOW_WEB_PRINT ? "3" : "2")) {
         e.preventDefault();
-        console.log("Shortcut 3: QZ Tray");
+        console.log("Shortcut: A5 Landscape");
+        const a5Btn = document.getElementById("bpm-a5");
+        if (a5Btn) {
+          a5Btn.click();
+        }
+        return;
+      }
+
+      if (e.key === (SHOW_WEB_PRINT ? "4" : "3")) {
+        e.preventDefault();
+        console.log("Shortcut: QZ Tray");
         const qzBtn = document.getElementById("bpm-qz");
         if (qzBtn) {
           qzBtn.click();
@@ -1346,12 +2018,12 @@ const showPreviewModal = () => {
         return;
       }
     }
-    
+
     // Enter key triggers the focused button
     if (e.key === "Enter") {
       e.preventDefault();
       const focusedElement = document.activeElement;
-      
+
       if (isMobile) {
         const rawbtBtn = document.getElementById("bpm-rawbt");
         if (rawbtBtn && document.activeElement === rawbtBtn) {
@@ -1363,8 +2035,10 @@ const showPreviewModal = () => {
         // Check which button is focused
         if (focusedElement && focusedElement.id === "bpm-download") {
           document.getElementById("bpm-download")?.click();
-        } else if (focusedElement && focusedElement.id === "bpm-web") {
+        } else if (SHOW_WEB_PRINT && focusedElement && focusedElement.id === "bpm-web") {
           document.getElementById("bpm-web")?.click();
+        } else if (focusedElement && focusedElement.id === "bpm-a5") {
+          document.getElementById("bpm-a5")?.click();
         } else if (focusedElement && focusedElement.id === "bpm-qz") {
           document.getElementById("bpm-qz")?.click();
         } else if (focusedElement && focusedElement.id === "bpm-cancel") {
@@ -1375,7 +2049,7 @@ const showPreviewModal = () => {
           if (qzBtn) {
             qzBtn.click();
           } else {
-            const webBtn = document.getElementById("bpm-web");
+            const webBtn = SHOW_WEB_PRINT ? document.getElementById("bpm-web") : null;
             if (webBtn) {
               webBtn.click();
             } else {
@@ -1389,13 +2063,13 @@ const showPreviewModal = () => {
       }
     }
   };
-  
+
   document.addEventListener("keydown", handleKeyDown);
 
   // Close button events
   document.getElementById("bpm-close")?.addEventListener("click", closeModal);
   document.getElementById("bpm-cancel")?.addEventListener("click", closeModal);
-  
+
   // IMPORTANT: Remove backdrop click to close modal - only close via buttons or Escape
   // modal.addEventListener("click", (e) => { if (e.target === modal) closeModal(); });
   // User cannot click outside to close - intentional for better UX
@@ -1439,13 +2113,40 @@ const showPreviewModal = () => {
     });
   }
 
-  // Add Web Print event listener for desktop users only
-  const webBtn = document.getElementById("bpm-web");
-  if (webBtn) {
-    webBtn.addEventListener("click", () => {
-      console.log("Web Print button clicked");
+  // Add Web Print event listener for desktop users only — gated by SHOW_WEB_PRINT
+  if (SHOW_WEB_PRINT) {
+    const webBtn = document.getElementById("bpm-web");
+    if (webBtn) {
+      webBtn.addEventListener("click", () => {
+        console.log("Web Print button clicked");
+        closeModal();
+        setTimeout(() => printViaWebBrowser(previewHtml, onClose), 150);
+      });
+    }
+  }
+
+  // Add A5 Landscape event listener for desktop users only
+  const a5Btn = document.getElementById("bpm-a5");
+  if (a5Btn) {
+    a5Btn.addEventListener("click", () => {
+      console.log("A5 Landscape button clicked");
       closeModal();
-      setTimeout(() => printViaWebBrowser(previewHtml, onClose), 150);
+      setTimeout(() => {
+        printViaA5Landscape({
+          enrichedBill,
+          company,
+          customerName,
+          customerPhone,
+          formattedDate,
+          fmt,
+          subtotal,
+          discountAmount,
+          total,
+          paid,
+          due,
+          onClose
+        });
+      }, 150);
     });
   }
 
@@ -1458,13 +2159,13 @@ const showPreviewModal = () => {
         console.log("Mobile - Focus set on RawBT button");
       }
     } else {
-      // On desktop, focus QZ Tray if available, else Web Print, else Download
+      // On desktop, focus QZ Tray if available, else Web Print (if shown), else Download
       const qzBtn = document.getElementById("bpm-qz");
       if (qzBtn) {
         qzBtn.focus();
         console.log("Desktop - Focus set on QZ Tray button");
       } else {
-        const webBtn = document.getElementById("bpm-web");
+        const webBtn = SHOW_WEB_PRINT ? document.getElementById("bpm-web") : null;
         if (webBtn) {
           webBtn.focus();
           console.log("Desktop - Focus set on Web Print button");
@@ -1477,29 +2178,35 @@ const showPreviewModal = () => {
         }
       }
     }
-    
+
     // Log which buttons are available for debugging
     console.log("Device type:", isMobile ? "Mobile" : "Desktop");
     console.log("Available buttons:", {
       download: !!document.getElementById("bpm-download"),
       web: !!document.getElementById("bpm-web"),
+      a5: !!document.getElementById("bpm-a5"),
       rawbt: !!document.getElementById("bpm-rawbt"),
       qz: !!document.getElementById("bpm-qz")
     });
-    
+
     // Add improved keyboard shortcut hint with number shortcuts
     const modalContainer = document.querySelector("#bill-preview-modal div:first-child");
     if (modalContainer && !modalContainer.querySelector(".keyboard-hint")) {
       const hint = document.createElement("div");
       hint.className = "keyboard-hint";
       hint.style.cssText = "text-align:center;padding:8px 16px 0;font-size:11px;color:#999;border-top:1px solid #f0f0f0;margin-top:8px;";
-      
+
       if (isMobile) {
         hint.innerHTML = "💡 Press <kbd style=\"background:#f5f5f5;padding:2px 6px;border-radius:4px;font-family:monospace;\">Enter</kbd> to print • <kbd style=\"background:#f5f5f5;padding:2px 6px;border-radius:4px;font-family:monospace;\">Esc</kbd> to close";
       } else {
-        hint.innerHTML = "💡 Keyboard Shortcuts: <kbd style=\"background:#f5f5f5;padding:2px 6px;border-radius:4px;font-family:monospace;font-weight:bold;\">1</kbd> Download TXT • <kbd style=\"background:#f5f5f5;padding:2px 6px;border-radius:4px;font-family:monospace;font-weight:bold;\">2</kbd> Web Print • <kbd style=\"background:#f5f5f5;padding:2px 6px;border-radius:4px;font-family:monospace;font-weight:bold;\">3</kbd> QZ Tray • <kbd style=\"background:#f5f5f5;padding:2px 6px;border-radius:4px;font-family:monospace;font-weight:bold;\">Tab</kbd> + <kbd style=\"background:#f5f5f5;padding:2px 6px;border-radius:4px;font-family:monospace;font-weight:bold;\">Enter</kbd> on button • <kbd style=\"background:#f5f5f5;padding:2px 6px;border-radius:4px;font-family:monospace;font-weight:bold;\">Esc</kbd> close";
+        const webPrintHint = SHOW_WEB_PRINT
+          ? ` • <kbd style="background:#f5f5f5;padding:2px 6px;border-radius:4px;font-family:monospace;font-weight:bold;">2</kbd> Web Print`
+          : "";
+        const a5Num = SHOW_WEB_PRINT ? "3" : "2";
+        const qzNum = SHOW_WEB_PRINT ? "4" : "3";
+        hint.innerHTML = `💡 Keyboard Shortcuts: <kbd style="background:#f5f5f5;padding:2px 6px;border-radius:4px;font-family:monospace;font-weight:bold;">1</kbd> Download TXT${webPrintHint} • <kbd style="background:#f5f5f5;padding:2px 6px;border-radius:4px;font-family:monospace;font-weight:bold;">${a5Num}</kbd> A5 Landscape • <kbd style="background:#f5f5f5;padding:2px 6px;border-radius:4px;font-family:monospace;font-weight:bold;">${qzNum}</kbd> QZ Tray • <kbd style="background:#f5f5f5;padding:2px 6px;border-radius:4px;font-family:monospace;font-weight:bold;">Tab</kbd> + <kbd style="background:#f5f5f5;padding:2px 6px;border-radius:4px;font-family:monospace;font-weight:bold;">Enter</kbd> on button • <kbd style="background:#f5f5f5;padding:2px 6px;border-radius:4px;font-family:monospace;font-weight:bold;">Esc</kbd> close`;
       }
-      
+
       const buttonContainer = modal.querySelector("div:last-child");
       if (buttonContainer) {
         buttonContainer.parentNode.insertBefore(hint, buttonContainer.nextSibling);

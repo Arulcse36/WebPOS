@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback, useMemo, memo } from "react";
 import axios from "axios";
+import * as XLSX from "xlsx";
 
 const API = `${import.meta.env.VITE_API_URL}`;
 
@@ -218,6 +219,7 @@ const ProductBulk = () => {
     const [newRowErrors, setNewRowErrors] = useState({});
     const [bulkField, setBulkField] = useState("");
     const [bulkValue, setBulkValue] = useState("");
+    const [exporting, setExporting] = useState(false);
     
     // Pagination states
     const [currentPage, setCurrentPage] = useState(1);
@@ -719,6 +721,61 @@ const ProductBulk = () => {
         setFilterStatus("");
     }, []);
 
+    // Export to Excel — exports selected rows if any are checked,
+    // otherwise exports whatever is currently visible under the active search/filters.
+    const exportToExcel = useCallback(() => {
+        const rowsToExport = selectedIds.size > 0
+            ? filteredProducts.filter(p => selectedIds.has(p._id))
+            : filteredProducts;
+
+        if (rowsToExport.length === 0) {
+            alert("No products to export.");
+            return;
+        }
+
+        setExporting(true);
+        try {
+            const data = rowsToExport.map(p => ({
+                "Code": p.productCode || "",
+                "Name": p.name || "",
+                "Tamil Name": p.tamilName || "",
+                "MRP": p.mrp ?? "",
+                "Retail Rate": p.retailRate ?? "",
+                "Wholesale Rate": p.wholesaleRate ?? "",
+                "Category": p.category?.name || "",
+                "Brand": p.brand?.name || "",
+                "UOM": p.uom?.name || "",
+                "Status": p.isActive === false ? "Inactive" : "Active",
+            }));
+
+            const worksheet = XLSX.utils.json_to_sheet(data);
+
+            // Friendlier column widths
+            worksheet["!cols"] = [
+                { wch: 12 }, // Code
+                { wch: 35 }, // Name
+                { wch: 35 }, // Tamil Name
+                { wch: 10 }, // MRP
+                { wch: 12 }, // Retail Rate
+                { wch: 14 }, // Wholesale Rate
+                { wch: 18 }, // Category
+                { wch: 18 }, // Brand
+                { wch: 10 }, // UOM
+                { wch: 10 }, // Status
+            ];
+
+            const workbook = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(workbook, worksheet, "Products");
+
+            const timestamp = new Date().toISOString().slice(0, 10);
+            XLSX.writeFile(workbook, `products_export_${timestamp}.xlsx`);
+        } catch (err) {
+            alert("Failed to export products to Excel.");
+        } finally {
+            setExporting(false);
+        }
+    }, [filteredProducts, selectedIds]);
+
     const bulkFieldOptions = [
         { value: "category", label: "Category" },
         { value: "brand", label: "Brand" },
@@ -831,6 +888,10 @@ const ProductBulk = () => {
                         <button onClick={loadData} disabled={loading}
                             className="text-sm px-4 py-2 rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50 transition font-medium disabled:opacity-50">
                             🔄 Refresh
+                        </button>
+                        <button onClick={exportToExcel} disabled={exporting}
+                            className="text-sm px-4 py-2 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 transition font-semibold shadow disabled:opacity-50">
+                            {exporting ? "Exporting..." : `📊 Export to Excel${selectedIds.size > 0 ? ` (${selectedIds.size} selected)` : ""}`}
                         </button>
                         {dirtyCount > 0 && (
                             <>

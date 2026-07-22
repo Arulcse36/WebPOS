@@ -1,0 +1,13 @@
+TODO:
+
+Export all items to Excel
+
+when searching by item code only matched item should come
+
+Need to include A5 Print Layout.
+
+	1. 3 inch print
+	2. A5 Web Print
+	3. QZ Tray Print
+	
+Avoid more than a bill getting created when creating bill

@@ -80,11 +80,24 @@ const ProductSearchInput = forwardRef(({ products, onAddToCart, isLoading, rateT
     }, 100);
   }, []);
 
-  // Filter products based on search term - SHOW ALL PRODUCTS
-  useEffect(() => {
-    if (searchTerm.trim().length > 0 && !selectedProduct) {
-      const term = searchTerm.toLowerCase().trim();
-      const filtered = products.filter(p => 
+// Filter products based on search term
+useEffect(() => {
+  if (searchTerm.trim().length > 0 && !selectedProduct) {
+    const term = searchTerm.toLowerCase().trim();
+
+    // Exact code/barcode match takes priority — narrow to just that item
+    const exactCodeMatches = products.filter(p =>
+      p && p.isActive === true && p.name && (
+        (p.productCode && p.productCode.toString().toLowerCase() === term) ||
+        (p.barcode && p.barcode.toString().toLowerCase() === term)
+      )
+    );
+
+    let filtered;
+    if (exactCodeMatches.length > 0) {
+      filtered = exactCodeMatches;
+    } else {
+      filtered = products.filter(p => 
         p && p.isActive === true && 
         p.name && (
           p.name.toLowerCase().includes(term) ||
@@ -92,17 +105,17 @@ const ProductSearchInput = forwardRef(({ products, onAddToCart, isLoading, rateT
           (p.productCode && p.productCode.toString().includes(term))
         )
       );
-      // Show ALL filtered products
-      setSearchResults(filtered);
-      setShowResults(true);
-      setSelectedIndex(filtered.length > 0 ? 0 : -1);
-    } else if (!selectedProduct) {
-      setSearchResults([]);
-      setShowResults(false);
-      setSelectedIndex(-1);
     }
-  }, [searchTerm, products, selectedProduct]);
 
+    setSearchResults(filtered);
+    setShowResults(true);
+    setSelectedIndex(filtered.length > 0 ? 0 : -1);
+  } else if (!selectedProduct) {
+    setSearchResults([]);
+    setShowResults(false);
+    setSelectedIndex(-1);
+  }
+}, [searchTerm, products, selectedProduct]);
   // Handle click outside
   useEffect(() => {
     const handleClickOutside = (event) => {
@@ -757,6 +770,9 @@ const RetailPos = () => {
   const [dueAmount, setDueAmount] = useState(0);
   const [creditType, setCreditType] = useState("full");
 
+  // Submission lock - prevents multiple submissions
+  const isSubmittingRef = useRef(false);
+
   const mainContainerRef = useRef(null);
   const productSearchRef = useRef(null);
   const customerSearchRef = useRef(null);
@@ -918,7 +934,7 @@ const RetailPos = () => {
         setBillNumber(bill.billNumber || bill.id || "N/A");
         setDiscount(bill.discount || 0);
         
-        // Set rate type - using a function to ensure state update
+        // Set rate type - using a function to force the update outside the current batch
         if (bill.rateType) {
           // Use setTimeout to force the update outside the current batch
           setTimeout(() => {
@@ -998,12 +1014,21 @@ const RetailPos = () => {
   }, [billId, navigate, companyId, fetchProductDetails]);
 
   const processCheckout = useCallback(async (paymentData) => {
+    // Prevent multiple submissions
+    if (isSubmittingRef.current) {
+      console.log("⚠️ Submission already in progress");
+      return false;
+    }
+
     if (!cart || cart.length === 0) {
       alert("Cart is empty!");
       return false;
     }
 
+    // Set the lock
+    isSubmittingRef.current = true;
     setCheckoutLoading(true);
+
     try {
       const payload = {
         companyId: companyId,
@@ -1093,21 +1118,35 @@ const RetailPos = () => {
       console.error("Checkout error:", err);
       return false;
     } finally {
+      // Release the lock
+      isSubmittingRef.current = false;
       setCheckoutLoading(false);
     }
   }, [cart, discountAmount, total, selectedCustomer, billDate, isEditMode, billId, navigate, billNumber, companyId, discount, rateType]);
 
   // Payment Handlers
   const handleCashPayment = useCallback(() => {
+    // Check if already submitting
+    if (isSubmittingRef.current || checkoutLoading) {
+      console.log("⚠️ Submission already in progress");
+      return;
+    }
+
     if (!cart || cart.length === 0) {
       alert("Cart is empty! Please add items to continue.");
       return;
     }
     setCashAmount(total.toString());
     setShowCashModal(true);
-  }, [cart, total]);
+  }, [cart, total, checkoutLoading]);
 
   const handleUPIPayment = useCallback(async () => {
+    // Check if already submitting
+    if (isSubmittingRef.current || checkoutLoading) {
+      console.log("⚠️ Submission already in progress");
+      return;
+    }
+
     if (!cart || cart.length === 0) {
       alert("Cart is empty! Please add items to continue.");
       return;
@@ -1138,9 +1177,15 @@ const RetailPos = () => {
       setCheckoutLoading(false);
       setActivePaymentMethod(null);
     }
-  }, [cart, total, processCheckout]);
+  }, [cart, total, processCheckout, checkoutLoading]);
 
   const processCashPayment = useCallback(async (amount) => {
+    // Check if already submitting
+    if (isSubmittingRef.current || checkoutLoading) {
+      console.log("⚠️ Submission already in progress");
+      return;
+    }
+
     if (!amount || amount <= 0) {
       alert("Please enter a valid cash amount");
       return;
@@ -1181,9 +1226,15 @@ const RetailPos = () => {
       setCheckoutLoading(false);
       setActivePaymentMethod(null);
     }
-  }, [total, processCheckout]);
+  }, [total, processCheckout, checkoutLoading]);
 
   const handleCreditPayment = useCallback(() => {
+    // Check if already submitting
+    if (isSubmittingRef.current || checkoutLoading) {
+      console.log("⚠️ Submission already in progress");
+      return;
+    }
+
     if (!cart || cart.length === 0) {
       alert("Cart is empty! Please add items to continue.");
       return;
@@ -1214,7 +1265,7 @@ const RetailPos = () => {
       setDueAmount(total);
       setShowCreditModal(true);
     }
-  }, [cart, total, isRegisteredCustomer]);
+  }, [cart, total, isRegisteredCustomer, checkoutLoading]);
 
   const handleCashAmountChange = useCallback((e) => {
     const value = e.target.value;
@@ -1249,6 +1300,12 @@ const RetailPos = () => {
   }, [cashAmount, total]);
 
   const handleCreditConfirm = useCallback(async () => {
+    // Check if already submitting
+    if (isSubmittingRef.current || checkoutLoading) {
+      console.log("⚠️ Submission already in progress");
+      return;
+    }
+
     setCheckoutLoading(true);
     try {
       if (creditType === "full") {
@@ -1295,7 +1352,7 @@ const RetailPos = () => {
       setCheckoutLoading(false);
       setActivePaymentMethod(null);
     }
-  }, [creditType, cashAmount, upiAmount, total, processCheckout]);
+  }, [creditType, cashAmount, upiAmount, total, processCheckout, checkoutLoading]);
 
   const incrementDiscount = useCallback(() => {
     setDiscount(prev => Math.min(100, prev + 5));
@@ -1867,14 +1924,14 @@ const RetailPos = () => {
                 <div className="grid grid-cols-3 gap-2">
                   <button
                     onClick={handleCashPayment}
-                    disabled={checkoutLoading || !cart || cart.length === 0}
+                    disabled={checkoutLoading || !cart || cart.length === 0 || isSubmittingRef.current}
                     className={`py-2 px-2 rounded-xl text-sm font-bold text-white transition-all flex items-center justify-center gap-1.5 ${
                       activePaymentMethod === 'cash' 
                         ? 'bg-emerald-700 ring-2 ring-emerald-300' 
                         : 'bg-emerald-600 hover:bg-emerald-700'
                     } disabled:bg-gray-400 disabled:cursor-not-allowed`}
                   >
-                    {activePaymentMethod === 'cash' ? (
+                    {activePaymentMethod === 'cash' || checkoutLoading ? (
                       <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
                     ) : (
                       "💵"
@@ -1885,14 +1942,14 @@ const RetailPos = () => {
                   
                   <button
                     onClick={handleUPIPayment}
-                    disabled={checkoutLoading || !cart || cart.length === 0}
+                    disabled={checkoutLoading || !cart || cart.length === 0 || isSubmittingRef.current}
                     className={`py-2 px-2 rounded-xl text-sm font-bold text-white transition-all flex items-center justify-center gap-1.5 ${
                       activePaymentMethod === 'upi' 
                         ? 'bg-blue-700 ring-2 ring-blue-300' 
                         : 'bg-blue-600 hover:bg-blue-700'
                     } disabled:bg-gray-400 disabled:cursor-not-allowed`}
                   >
-                    {activePaymentMethod === 'upi' ? (
+                    {activePaymentMethod === 'upi' || checkoutLoading ? (
                       <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
                     ) : (
                       "📱"
@@ -1903,7 +1960,7 @@ const RetailPos = () => {
                   
                   <button
                     onClick={handleCreditPayment}
-                    disabled={checkoutLoading || !cart || cart.length === 0 || (!isRegisteredCustomer)}
+                    disabled={checkoutLoading || !cart || cart.length === 0 || (!isRegisteredCustomer) || isSubmittingRef.current}
                     className={`py-2 px-2 rounded-xl text-sm font-bold text-white transition-all flex items-center justify-center gap-1.5 ${
                       activePaymentMethod === 'credit' 
                         ? 'bg-amber-700 ring-2 ring-amber-300' 
@@ -1911,7 +1968,7 @@ const RetailPos = () => {
                     } disabled:bg-gray-400 disabled:cursor-not-allowed`}
                     title={!isRegisteredCustomer ? "Add customer to use credit" : "Credit payment (Ctrl+R)"}
                   >
-                    {activePaymentMethod === 'credit' ? (
+                    {activePaymentMethod === 'credit' || checkoutLoading ? (
                       <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
                     ) : (
                       "📝"
@@ -2188,9 +2245,17 @@ const RetailPos = () => {
                     alert(`Please enter amount equal to or greater than ${formatCurrency(total)}`);
                   }
                 }}
-                className="w-full bg-indigo-600 text-white py-3 rounded-xl font-semibold text-sm hover:bg-indigo-700 transition-colors"
+                disabled={checkoutLoading || isSubmittingRef.current}
+                className="w-full bg-indigo-600 text-white py-3 rounded-xl font-semibold text-sm hover:bg-indigo-700 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed"
               >
-                Confirm Cash Payment
+                {checkoutLoading || isSubmittingRef.current ? (
+                  <div className="flex items-center justify-center gap-2">
+                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                    Processing...
+                  </div>
+                ) : (
+                  "Confirm Cash Payment"
+                )}
               </button>
             </div>
           </div>
@@ -2299,10 +2364,17 @@ const RetailPos = () => {
                   <button
                     ref={creditConfirmBtnRef}
                     onClick={handleCreditConfirm}
-                    disabled={((parseFloat(cashAmount) || 0) + (parseFloat(upiAmount) || 0)) === 0}
+                    disabled={((parseFloat(cashAmount) || 0) + (parseFloat(upiAmount) || 0)) === 0 || checkoutLoading || isSubmittingRef.current}
                     className="w-full bg-amber-600 text-white py-3 rounded-xl font-semibold text-sm hover:bg-amber-700 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed"
                   >
-                    Confirm Split Payment
+                    {checkoutLoading || isSubmittingRef.current ? (
+                      <div className="flex items-center justify-center gap-2">
+                        <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                        Processing...
+                      </div>
+                    ) : (
+                      "Confirm Split Payment"
+                    )}
                   </button>
                 </>
               ) : (
@@ -2321,10 +2393,18 @@ const RetailPos = () => {
                   <button
                     ref={creditConfirmBtnRef}
                     onClick={handleCreditConfirm}
-                    className="w-full bg-amber-600 text-white py-3 rounded-xl font-semibold text-sm hover:bg-amber-700 transition-colors"
+                    disabled={checkoutLoading || isSubmittingRef.current}
+                    className="w-full bg-amber-600 text-white py-3 rounded-xl font-semibold text-sm hover:bg-amber-700 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed"
                     autoFocus
                   >
-                    Confirm Full Credit
+                    {checkoutLoading || isSubmittingRef.current ? (
+                      <div className="flex items-center justify-center gap-2">
+                        <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                        Processing...
+                      </div>
+                    ) : (
+                      "Confirm Full Credit"
+                    )}
                   </button>
                 </div>
               )}
