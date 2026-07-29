@@ -393,6 +393,11 @@ useEffect(() => {
                           <span className="text-xs text-gray-500 bg-gray-100 px-2 py-0.5 rounded-full">
                             {getUOMDisplay(product)}
                           </span>
+                          {product.purchaseRate != null && (
+                            <span className="text-xs text-gray-500 bg-gray-100 px-2 py-0.5 rounded-full">
+                              Pur Rt: {formatCurrency(product.purchaseRate)}
+                            </span>
+                          )}
                           {rateType === 'wholesale' && product.wholesaleRate && (
                             <span className="text-xs text-purple-600 bg-purple-100 px-2 py-0.5 rounded-full">
                               WS

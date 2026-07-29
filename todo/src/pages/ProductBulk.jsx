@@ -28,7 +28,7 @@ const CellSelect = memo(({ value, onChange, options, error, dirty, className = "
             value={value ?? ""}
             onChange={e => onChange(e.target.value)}
             onKeyDown={onKeyDown}
-            className={`border rounded-lg px-2 py-1 text-sm focus:ring-2 focus:ring-blue-400 outline-none transition text-gray-900 bg-white ${className}
+            className={`border rounded-lg px-2 py-1 text-sm focus:ring-2 focus:ring-blue-400 outline-none transition bg-white text-gray-900 ${className}
                 ${error ? "border-red-400 bg-red-50" : dirty ? "border-amber-400 bg-amber-50" : "border-gray-200"}`}
         >
             <option value="">— Select —</option>
@@ -97,6 +97,16 @@ const ProductRow = memo(({
                     error={rowErrors.tamilName}
                     dirty={dirty && "tamilName" in (editedRows[product._id] || {})}
                     className="w-80"
+                />
+            </td>
+            <td className="px-2 py-1.5">
+                <CellInput
+                    value={getValue(product, "purchaseRate")}
+                    onChange={v => handleCellChange(product._id, "purchaseRate", v)}
+                    type="number"
+                    error={rowErrors.purchaseRate}
+                    dirty={dirty && "purchaseRate" in (editedRows[product._id] || {})}
+                    className="w-24 text-right"
                 />
             </td>
             <td className="px-2 py-1.5">
@@ -354,6 +364,7 @@ const ProductBulk = () => {
         if (!get("productCode")?.toString().trim()) errs.productCode = "Required";
         if (!get("name")?.toString().trim()) errs.name = "Required";
         if (!get("tamilName")?.toString().trim()) errs.tamilName = "Required";
+        if (!get("purchaseRate") || parseFloat(get("purchaseRate")) <= 0) errs.purchaseRate = "Must be > 0";
         if (!get("mrp") || parseFloat(get("mrp")) <= 0) errs.mrp = "Must be > 0";
         if (!get("retailRate") || parseFloat(get("retailRate")) <= 0) errs.retailRate = "Must be > 0";
         if (!get("wholesaleRate") || parseFloat(get("wholesaleRate")) <= 0) errs.wholesaleRate = "Must be > 0";
@@ -375,6 +386,7 @@ const ProductBulk = () => {
             productCode: getValue(product, "productCode"),
             name: getValue(product, "name"),
             tamilName: getValue(product, "tamilName"),
+            purchaseRate: getValue(product, "purchaseRate"),
             mrp: getValue(product, "mrp"),
             retailRate: getValue(product, "retailRate"),
             wholesaleRate: getValue(product, "wholesaleRate"),
@@ -447,6 +459,7 @@ const ProductBulk = () => {
                 productCode: getValue(product, "productCode"),
                 name: getValue(product, "name"),
                 tamilName: getValue(product, "tamilName"),
+                purchaseRate: getValue(product, "purchaseRate"),
                 mrp: getValue(product, "mrp"),
                 retailRate: getValue(product, "retailRate"),
                 wholesaleRate: getValue(product, "wholesaleRate"),
@@ -562,6 +575,7 @@ const ProductBulk = () => {
             name: "",
             tamilName: "",
             _tamilNamePristine: "",
+            purchaseRate: "",
             mrp: "",
             retailRate: "",
             wholesaleRate: "",
@@ -599,6 +613,7 @@ const ProductBulk = () => {
         if (!row.productCode?.trim()) errs.productCode = "Required";
         if (!row.name?.trim()) errs.name = "Required";
         if (!row.tamilName?.trim()) errs.tamilName = "Required";
+        if (!row.purchaseRate || parseFloat(row.purchaseRate) <= 0) errs.purchaseRate = "Must be > 0";
         if (!row.mrp || parseFloat(row.mrp) <= 0) errs.mrp = "Must be > 0";
         if (!row.retailRate || parseFloat(row.retailRate) <= 0) errs.retailRate = "Must be > 0";
         if (!row.wholesaleRate || parseFloat(row.wholesaleRate) <= 0) errs.wholesaleRate = "Must be > 0";
@@ -622,6 +637,7 @@ const ProductBulk = () => {
                 productCode: row.productCode,
                 name: row.name,
                 tamilName: row.tamilName,
+                purchaseRate: row.purchaseRate,
                 mrp: row.mrp,
                 retailRate: row.retailRate,
                 wholesaleRate: row.wholesaleRate,
@@ -641,6 +657,7 @@ const ProductBulk = () => {
                 name: row.name,
                 tamilName: row.tamilName,
                 _tamilNamePristine: row.tamilName,
+                purchaseRate: "",
                 mrp: "",
                 retailRate: "",
                 wholesaleRate: "",
@@ -739,6 +756,7 @@ const ProductBulk = () => {
                 "Code": p.productCode || "",
                 "Name": p.name || "",
                 "Tamil Name": p.tamilName || "",
+                "Purchase Rate": p.purchaseRate ?? "",
                 "MRP": p.mrp ?? "",
                 "Retail Rate": p.retailRate ?? "",
                 "Wholesale Rate": p.wholesaleRate ?? "",
@@ -755,6 +773,7 @@ const ProductBulk = () => {
                 { wch: 12 }, // Code
                 { wch: 35 }, // Name
                 { wch: 35 }, // Tamil Name
+                { wch: 14 }, // Purchase Rate
                 { wch: 10 }, // MRP
                 { wch: 12 }, // Retail Rate
                 { wch: 14 }, // Wholesale Rate
@@ -989,6 +1008,7 @@ const ProductBulk = () => {
                                             <th className="px-3 py-3 text-left whitespace-nowrap">Code</th>
                                             <th className="px-3 py-3 text-left whitespace-nowrap min-w-[300px]">Product Name</th>
                                             <th className="px-3 py-3 text-left whitespace-nowrap min-w-[300px]">Tamil Name</th>
+                                            <th className="px-3 py-3 text-right whitespace-nowrap">Purchase (₹)</th>
                                             <th className="px-3 py-3 text-right whitespace-nowrap">MRP (₹)</th>
                                             <th className="px-3 py-3 text-right whitespace-nowrap">Retail (₹)</th>
                                             <th className="px-3 py-3 text-right whitespace-nowrap">Wholesale (₹)</th>
@@ -1008,8 +1028,8 @@ const ProductBulk = () => {
                                             const fieldRef = (idx) => el => {
                                                 fRefs[idx] = el;
                                                 if (idx === 0) newRowCodeRefs.current[row.tempId] = el;
-                                                if (idx === 6) newRowSelectRefs.current[`${row.tempId}_category`] = el;
-                                                if (idx === 7) newRowSelectRefs.current[`${row.tempId}_brand`] = el;
+                                                if (idx === 7) newRowSelectRefs.current[`${row.tempId}_category`] = el;
+                                                if (idx === 8) newRowSelectRefs.current[`${row.tempId}_brand`] = el;
                                             };
                                             const handleKeyDown = (e, fieldIndex) => {
                                                 if (e.key !== "Enter") return;
@@ -1056,33 +1076,40 @@ const ProductBulk = () => {
                                                             error={rowErrs.tamilName} dirty={false} className="w-80 border-green-300 bg-white" />
                                                      </td>
                                                     <td className="px-2 py-1.5">
-                                                        <CellInput value={row.mrp} type="number"
-                                                            onChange={v => handleNewRowChange(row.tempId, "mrp", v)}
+                                                        <CellInput value={row.purchaseRate} type="number"
+                                                            onChange={v => handleNewRowChange(row.tempId, "purchaseRate", v)}
                                                             onKeyDown={e => handleKeyDown(e, 3)}
                                                             inputRef={fieldRef(3)}
+                                                            error={rowErrs.purchaseRate} dirty={false} className="w-24 text-right border-green-300 bg-white" />
+                                                     </td>
+                                                    <td className="px-2 py-1.5">
+                                                        <CellInput value={row.mrp} type="number"
+                                                            onChange={v => handleNewRowChange(row.tempId, "mrp", v)}
+                                                            onKeyDown={e => handleKeyDown(e, 4)}
+                                                            inputRef={fieldRef(4)}
                                                             error={rowErrs.mrp} dirty={false} className="w-24 text-right border-green-300 bg-white" />
                                                      </td>
                                                     <td className="px-2 py-1.5">
                                                         <CellInput value={row.retailRate} type="number"
                                                             onChange={v => handleNewRowChange(row.tempId, "retailRate", v)}
-                                                            onKeyDown={e => handleKeyDown(e, 4)}
-                                                            inputRef={fieldRef(4)}
+                                                            onKeyDown={e => handleKeyDown(e, 5)}
+                                                            inputRef={fieldRef(5)}
                                                             error={rowErrs.retailRate} dirty={false} className="w-24 text-right border-green-300 bg-white" />
                                                      </td>
                                                     <td className="px-2 py-1.5">
                                                         <CellInput value={row.wholesaleRate} type="number"
                                                             onChange={v => handleNewRowChange(row.tempId, "wholesaleRate", v)}
-                                                            onKeyDown={e => handleKeyDown(e, 5)}
-                                                            inputRef={fieldRef(5)}
+                                                            onKeyDown={e => handleKeyDown(e, 6)}
+                                                            inputRef={fieldRef(6)}
                                                             error={rowErrs.wholesaleRate} dirty={false} className="w-24 text-right border-green-300 bg-white" />
                                                      </td>
                                                     <td className="px-2 py-1.5">
                                                         <div className="flex items-start gap-1">
                                                             <CellSelect value={row.category}
                                                                 onChange={v => handleNewRowChange(row.tempId, "category", v)}
-                                                                onKeyDown={e => handleKeyDown(e, 6)}
+                                                                onKeyDown={e => handleKeyDown(e, 7)}
                                                                 options={categories} error={rowErrs.category} dirty={false} className="w-36 border-green-300"
-                                                                selectRef={fieldRef(6)} />
+                                                                selectRef={fieldRef(7)} />
                                                             <button tabIndex={-1}
                                                                 onClick={() => openQuickAdd("category", row.tempId, "category")}
                                                                 className="mt-0.5 bg-blue-100 text-blue-700 hover:bg-blue-200 border border-blue-300 rounded-lg px-1.5 py-1 text-xs font-bold transition shrink-0"
@@ -1093,9 +1120,9 @@ const ProductBulk = () => {
                                                         <div className="flex items-start gap-1">
                                                             <CellSelect value={row.brand}
                                                                 onChange={v => handleNewRowChange(row.tempId, "brand", v)}
-                                                                onKeyDown={e => handleKeyDown(e, 7)}
+                                                                onKeyDown={e => handleKeyDown(e, 8)}
                                                                 options={brands} error={rowErrs.brand} dirty={false} className="w-36 border-green-300"
-                                                                selectRef={fieldRef(7)} />
+                                                                selectRef={fieldRef(8)} />
                                                             <button tabIndex={-1}
                                                                 onClick={() => openQuickAdd("brand", row.tempId, "brand")}
                                                                 className="mt-0.5 bg-blue-100 text-blue-700 hover:bg-blue-200 border border-blue-300 rounded-lg px-1.5 py-1 text-xs font-bold transition shrink-0"
@@ -1105,16 +1132,16 @@ const ProductBulk = () => {
                                                     <td className="px-2 py-1.5">
                                                         <CellSelect value={row.uom}
                                                             onChange={v => handleNewRowChange(row.tempId, "uom", v)}
-                                                            onKeyDown={e => handleKeyDown(e, 8)}
+                                                            onKeyDown={e => handleKeyDown(e, 9)}
                                                             options={uoms} error={rowErrs.uom} dirty={false} className="w-32 border-green-300"
-                                                            selectRef={fieldRef(8)} />
+                                                            selectRef={fieldRef(9)} />
                                                      </td>
                                                     <td className="px-2 py-1.5 text-center">
                                                         <select
-                                                            ref={fieldRef(9)}
+                                                            ref={fieldRef(10)}
                                                             value={String(row.isActive)}
                                                             onChange={e => handleNewRowChange(row.tempId, "isActive", e.target.value === "true")}
-                                                            onKeyDown={e => handleKeyDown(e, 9)}
+                                                            onKeyDown={e => handleKeyDown(e, 10)}
                                                             className="border border-green-300 rounded-lg px-2 py-1 text-xs font-semibold focus:ring-2 focus:ring-green-400 outline-none bg-white text-green-700">
                                                             <option value="true">Active</option>
                                                             <option value="false">Inactive</option>

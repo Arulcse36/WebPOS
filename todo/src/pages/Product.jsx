@@ -54,6 +54,7 @@ const Product = () => {
         productCode: "",
         name: "",
         tamilName: "",
+        purchaseRate: "", // Added purchase rate
         mrp: "",
         retailRate: "",
         wholesaleRate: "",
@@ -111,6 +112,8 @@ const Product = () => {
         if (!form.productCode.trim()) err.productCode = "Product Code is required";
         if (!form.name.trim()) err.name = "Product Name is required";
         if (!form.tamilName.trim()) err.tamilName = "Tamil Name is required";
+        if (!form.purchaseRate) err.purchaseRate = "Purchase Rate is required";
+        if (form.purchaseRate && parseFloat(form.purchaseRate) <= 0) err.purchaseRate = "Purchase Rate must be greater than 0";
         if (!form.mrp) err.mrp = "MRP is required";
         if (form.mrp && parseFloat(form.mrp) <= 0) err.mrp = "MRP must be greater than 0";
         if (!form.retailRate) err.retailRate = "Retail Rate is required";
@@ -176,6 +179,7 @@ const Product = () => {
             productCode: "",
             name: "",
             tamilName: "",
+            purchaseRate: "", // Reset purchase rate
             mrp: "",
             retailRate: "",
             wholesaleRate: "",
@@ -192,6 +196,7 @@ const Product = () => {
             productCode: item.productCode,
             name: item.name,
             tamilName: item.tamilName || "",
+            purchaseRate: item.purchaseRate || "", // Added purchase rate
             mrp: item.mrp || "",
             retailRate: item.retailRate || "",
             wholesaleRate: item.wholesaleRate || "",
@@ -317,12 +322,24 @@ const Product = () => {
                                 error={errors.tamilName}
                                 disabled={loading}
                             />
+                            {/* Purchase Rate - First in the price section */}
+                            <InputField 
+                                label="Purchase Rate (₹)" 
+                                name="purchaseRate"
+                                value={form.purchaseRate}
+                                onChange={handleChange}
+                                type="number"
+                                step="0.01"
+                                error={errors.purchaseRate}
+                                disabled={loading}
+                            />
                             <InputField 
                                 label="MRP (₹)" 
                                 name="mrp"
                                 value={form.mrp}
                                 onChange={handleChange}
                                 type="number"
+                                step="0.01"
                                 error={errors.mrp}
                                 disabled={loading}
                             />
@@ -332,6 +349,7 @@ const Product = () => {
                                 value={form.retailRate}
                                 onChange={handleChange}
                                 type="number"
+                                step="0.01"
                                 error={errors.retailRate}
                                 disabled={loading}
                             />
@@ -341,6 +359,7 @@ const Product = () => {
                                 value={form.wholesaleRate}
                                 onChange={handleChange}
                                 type="number"
+                                step="0.01"
                                 error={errors.wholesaleRate}
                                 disabled={loading}
                             />
@@ -499,6 +518,8 @@ const Product = () => {
                                                     <span className="bg-green-50 text-gray-700 px-2 py-1 rounded">⚖️ {p.uom?.name}</span>
                                                 </div>
                                                 <div className="text-xs text-gray-600 mt-2 flex flex-wrap gap-3">
+                                                    {/* Purchase Rate highlighted */}
+                                                    <span className="font-medium bg-blue-50 px-2 py-1 rounded">Purchase: <span className="text-blue-700 font-bold">₹{p.purchaseRate}</span></span>
                                                     <span className="font-medium">MRP: <span className="text-gray-900">₹{p.mrp}</span></span>
                                                     <span className="font-medium">Retail: <span className="text-gray-900">₹{p.retailRate}</span></span>
                                                     <span className="font-medium">Wholesale: <span className="text-gray-900">₹{p.wholesaleRate}</span></span>

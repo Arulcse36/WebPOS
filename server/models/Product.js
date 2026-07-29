@@ -44,6 +44,10 @@ const ProductSchema = new mongoose.Schema({
     type: Number,
     min: [0, 'Wholesale rate cannot be negative']
   },
+  purchaseRate: {
+    type: Number,
+    min: [0, 'Purchase rate cannot be negative']
+  },
   category: {
     type: mongoose.Schema.Types.ObjectId,
     ref: "Category",
