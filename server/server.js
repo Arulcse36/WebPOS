@@ -18,6 +18,7 @@ const expenseMasterRoutes = require("./routes/expenseMasterRoutes");
 const paymentReportRoutes = require("./routes/paymentReportRoutes");
 const expenseTransactionRoutes = require("./routes/expenseTransactionRoutes");
 const seedRoutes = require("./routes/seedGrocessoryRoutes");
+const barcodeRoutes = require('./routes/barcodes');
 
 // ==================== MODEL IMPORTS ====================
 const Invoice = require("./models/Invoice");
@@ -47,6 +48,7 @@ app.use("/products", productRoutes);
 app.use("/reports", reportRoutes);
 app.use("/uoms", uomRoutes);
 app.use("/users", userRoutes);
+app.use('/barcodes', barcodeRoutes);
 
 // Seed route last
 app.use("/", seedRoutes);

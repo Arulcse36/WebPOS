@@ -13,6 +13,36 @@ const formatDate = (date) => {
   });
 };
 
+const formatQtyWithUom = (qty, uom) => {
+  const numericQty = Number(qty) || 0;
+  const normalizedUom = uom ? String(uom).trim() : "";
+  return normalizedUom ? `${numericQty} ${normalizedUom}` : `${numericQty}`;
+};
+
+const getItemUom = (item = {}, productUomMap = {}, name = "") => {
+  const candidates = [
+    item?.uom,
+    item?.UOM,
+    item?.unit,
+    item?.unitName,
+    item?.measure,
+    item?.measurement,
+    item?.unitOfMeasure,
+    item?.productUom,
+    item?.packaging,
+    item?.skuUom,
+    productUomMap?.[name],
+    item?.product?.uom,
+  ];
+
+  const found = candidates.find((value) => {
+    if (value === undefined || value === null) return false;
+    return String(value).trim() !== "";
+  });
+
+  return found ? String(found).trim() : "";
+};
+
 // ── Sub-components ─────────────────────────────────────────────────────────
 const SummaryCard = ({ title, value, sub, color }) => {
   const colors = {
@@ -215,6 +245,19 @@ const ItemsReport = () => {
     return map;
   }, [products]);
 
+  const productUomMap = useMemo(() => {
+    const map = {};
+    products.forEach(p => {
+      const candidates = [p.uom, p.UOM, p.unit, p.unitOfMeasure, p.measurement, p.measure];
+      const uomValue = candidates.find((value) => {
+        if (value === undefined || value === null) return false;
+        return String(value).trim() !== "";
+      });
+      if (uomValue !== undefined) map[p.name] = String(uomValue).trim();
+    });
+    return map;
+  }, [products]);
+
   // ── Derive product summary from bills ─────────────────────────────────────
   const { productMap, allCategories, totalRevenue, totalQty, topProduct } = useMemo(() => {
     const map = {};
@@ -222,15 +265,17 @@ const ItemsReport = () => {
     bills.forEach(bill => {
       (bill.items || []).forEach(item => {
         const name = item.name || item.productName || "Unknown";
-        // Look up category from products list since bill items don't carry it
+        // Look up category and UOM from products list since bill items may not carry them
         const category = productCategoryMap[name] || item.category || item.productCategory || "";
+        const uom = getItemUom(item, productUomMap, name);
         const qty = Number(item.quantity) || 0;
         const price = Number(item.price) || 0;
         const total = qty * price;
 
         if (!map[name]) {
-          map[name] = { name, category, qty: 0, revenue: 0, bills: [] };
+          map[name] = { name, category, uom, qty: 0, revenue: 0, bills: [] };
         }
+        if (!map[name].uom) map[name].uom = uom;
         map[name].qty += qty;
         map[name].revenue += total;
         map[name].bills.push({
@@ -240,6 +285,7 @@ const ItemsReport = () => {
           quantity: qty,
           price,
           total,
+          uom,
           fullBill: bill,
         });
       });
@@ -251,7 +297,7 @@ const ItemsReport = () => {
     const top = Object.values(map).sort((a, b) => b.revenue - a.revenue)[0] || null;
 
     return { productMap: map, allCategories: cats, totalRevenue: totalRev, totalQty: totalQ, topProduct: top };
-  }, [bills, productCategoryMap]);
+  }, [bills, productCategoryMap, productUomMap]);
 
   // ── Filtered + sorted product list ────────────────────────────────────────
   const filteredProducts = useMemo(() => {
@@ -281,6 +327,7 @@ const ItemsReport = () => {
       (bill.items || []).forEach(item => {
         const name = item.name || item.productName || "Unknown";
         const category = productCategoryMap[name] || item.category || "";
+        const uom = getItemUom(item, productUomMap, name);
         if (searchFilter && !name.toLowerCase().includes(searchFilter.toLowerCase())) return;
         if (categoryFilter && category !== categoryFilter) return;
         rows.push({
@@ -292,12 +339,13 @@ const ItemsReport = () => {
           qty: item.quantity,
           price: item.price,
           total: item.quantity * item.price,
+          uom,
           fullBill: bill,
         });
       });
     });
     return rows;
-  }, [bills, searchFilter, categoryFilter, productCategoryMap]);
+  }, [bills, searchFilter, categoryFilter, productCategoryMap, productUomMap]);
 
   // ── Sort toggle ────────────────────────────────────────────────────────────
   const toggleSort = (field) => {
@@ -577,7 +625,7 @@ const ItemsReport = () => {
                             ? <span className="bg-gray-100 px-2 py-0.5 rounded-full">{prod.category}</span>
                             : "—"}
                         </td>
-                        <td className="p-3 text-right font-bold text-gray-900">{prod.qty}</td>
+                        <td className="p-3 text-right font-bold text-gray-900">{formatQtyWithUom(prod.qty, prod.uom)}</td>
                         <td className="p-3 text-right font-bold text-blue-600">{formatCurrency(prod.revenue)}</td>
                         <td className="p-3 text-right text-gray-600 text-xs">
                           {formatCurrency(prod.revenue / (prod.qty || 1))}
@@ -643,7 +691,7 @@ const ItemsReport = () => {
                             ? <span className="bg-gray-100 px-2 py-0.5 rounded-full">{row.category}</span>
                             : "—"}
                         </td>
-                        <td className="p-3 text-right font-bold text-gray-900">{row.qty}</td>
+                        <td className="p-3 text-right font-bold text-gray-900">{formatQtyWithUom(row.qty, row.uom)}</td>
                         <td className="p-3 text-right text-gray-600">{formatCurrency(row.price)}</td>
                         <td className="p-3 text-right font-bold text-blue-600">{formatCurrency(row.total)}</td>
                         <td className="p-3 text-center">
@@ -697,7 +745,7 @@ const ItemsReport = () => {
                             />
                           </div>
                           <div className="flex justify-between mt-1 text-xs text-gray-500">
-                            <span>Qty: <strong className="text-gray-700">{prod.qty}</strong></span>
+                            <span>Qty: <strong className="text-gray-700">{formatQtyWithUom(prod.qty, prod.uom)}</strong></span>
                             <span>{pct.toFixed(1)}% of revenue</span>
                             <button
                               onClick={() => setModalProduct(prod)}

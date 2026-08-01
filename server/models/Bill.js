@@ -29,8 +29,78 @@ const paymentSchema = new mongoose.Schema({
   }
 });
 
+// Barcode details schema for items
+const barcodeDetailsSchema = new mongoose.Schema({
+  barcodeId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Barcode'
+  },
+  barcode: {
+    type: String,
+    default: null
+  },
+  expiryDate: {
+    type: Date,
+    default: null
+  },
+  mrp: {
+    type: Number,
+    default: null
+  },
+  retailRate: {
+    type: Number,
+    default: null
+  },
+  wholesaleRate: {
+    type: Number,
+    default: null
+  }
+}, { _id: false });
+
+// Item schema with barcode support
+const itemSchema = new mongoose.Schema({
+  productId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Product',
+    required: true
+  },
+  productName: {
+    type: String,
+    required: true
+  },
+  quantity: {
+    type: Number,
+    required: true,
+    min: 0
+  },
+  price: {
+    type: Number,
+    required: true,
+    min: 0
+  },
+  total: {
+    type: Number,
+    required: true,
+    min: 0
+  },
+  // Barcode fields
+  barcode: {
+    type: String,
+    default: null
+  },
+  barcodeId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Barcode',
+    default: null
+  },
+  barcodeDetails: {
+    type: barcodeDetailsSchema,
+    default: null
+  }
+}, { _id: false });
+
 const billSchema = new mongoose.Schema({
-  // ✅ ADD COMPANY ID
+  // ✅ COMPANY ID
   companyId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Company',
@@ -42,16 +112,7 @@ const billSchema = new mongoose.Schema({
     required: true,
     unique: true
   },
-  items: [{
-    productId: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: 'Product',
-      required: true
-    },
-    quantity: Number,
-    price: Number,
-    total: Number
-  }],
+  items: [itemSchema],
   subtotal: {
     type: Number,
     required: true
@@ -80,7 +141,7 @@ const billSchema = new mongoose.Schema({
     type: Number,
     default: 0
   },
-    returnAmount: {  // New field for change/return amount
+  returnAmount: {
     type: Number,
     default: 0
   },
@@ -93,9 +154,9 @@ const billSchema = new mongoose.Schema({
     enum: ['retail', 'wholesale'],
     required: true
   },
-   paymentMethod: {
+  paymentMethod: {
     type: String,
-    enum: ['cash', 'upi', 'credit'],
+    enum: ['cash', 'upi', 'credit', 'estimate'],
     required: true
   },
   customer: {
@@ -136,23 +197,41 @@ const billSchema = new mongoose.Schema({
   }
 });
 
-// ✅ TOTAL CALCULATION (NO next)
+// ✅ TOTAL CALCULATION
 billSchema.pre('save', function() {
-  this.items = this.items.map(item => ({
-    ...item.toObject(),
-    total: item.quantity * item.price
-  }));
+  this.items = this.items.map(item => {
+    // Ensure barcodeDetails is properly structured
+    if (item.barcodeDetails && typeof item.barcodeDetails === 'object') {
+      // If barcodeDetails is provided, make sure it has the correct structure
+      item.barcodeDetails = {
+        barcodeId: item.barcodeDetails.barcodeId || null,
+        barcode: item.barcodeDetails.barcode || null,
+        expiryDate: item.barcodeDetails.expiryDate || null,
+        mrp: item.barcodeDetails.mrp || null,
+        retailRate: item.barcodeDetails.retailRate || null,
+        wholesaleRate: item.barcodeDetails.wholesaleRate || null
+      };
+    }
+    
+    return {
+      ...item.toObject(),
+      total: item.quantity * item.price
+    };
+  });
 
   this.subtotal = this.items.reduce((sum, i) => sum + i.total, 0);
   this.discountAmount = (this.subtotal * this.discount) / 100;
   this.total = this.subtotal - this.discountAmount;
 });
 
-// ✅ Add compound index for companyId + billNumber
+// ✅ Add indexes for better query performance
 billSchema.index({ companyId: 1, billNumber: 1 }, { unique: true });
-// ✅ Add index for companyId + billDate for reports
 billSchema.index({ companyId: 1, billDate: -1 });
-// ✅ Add index for companyId + customer name for customer reports
 billSchema.index({ companyId: 1, 'customer.name': 1 });
+// Add index for barcode lookups
+billSchema.index({ 'items.barcodeId': 1 });
+billSchema.index({ 'items.barcode': 1 });
+// Add index for expiry date queries
+billSchema.index({ 'items.barcodeDetails.expiryDate': 1 });
 
 module.exports = mongoose.model('Bill', billSchema);

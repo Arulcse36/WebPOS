@@ -200,7 +200,7 @@ const ProductsMenu = ({ open, toggle, onNavigate, isSuperAdmin }) => (
 
     <div
       className="overflow-hidden transition-all duration-200"
-      style={{ maxHeight: open ? "450px" : "0px" }}
+      style={{ maxHeight: open ? "500px" : "0px" }}
     >
       <div className="ml-4 mt-1 flex flex-col gap-1 pb-1">
         <NavLink to="/products/category" className={({ isActive }) => subItemClass(isActive)} onClick={onNavigate}>
@@ -217,9 +217,12 @@ const ProductsMenu = ({ open, toggle, onNavigate, isSuperAdmin }) => (
         <NavLink to="/products/product" className={({ isActive }) => subItemClass(isActive)} onClick={onNavigate}>
           🛒 Product
         </NavLink>
-        {/* Product Bulk Link - Added */}
         <NavLink to="/products/ProductBulk" className={({ isActive }) => subItemClass(isActive)} onClick={onNavigate}>
           📤 Bulk Upload
+        </NavLink>
+        {/* Barcode Manager - Added */}
+        <NavLink to="/products/barcodes" className={({ isActive }) => subItemClass(isActive)} onClick={onNavigate}>
+          🏷️ Barcode Manager
         </NavLink>
       </div>
     </div>

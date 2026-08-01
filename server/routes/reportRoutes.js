@@ -82,7 +82,11 @@ router.get('/bills', async (req, res) => {
       .populate({
         path: 'items.productId',
         model: 'Product',
-        select: 'name productCode' // Only get the fields we need
+        select: 'name productCode uom', // Only get the fields we need
+        populate: {
+          path: 'uom',
+          select: 'name'
+        }
       })
       .sort({ billNumber: -1 });
 
@@ -113,10 +117,13 @@ router.get('/bills', async (req, res) => {
         productId: item.productId?._id || item.productId,
         name: item.productId?.name || 'Unknown Product',
         productCode: item.productId?.productCode,
+        uom: item.productId?.uom?.name || item.uom || null,
         quantity: item.quantity,
         price: item.price,
         total: item.total
       }));
+
+      
 
       return {
         _id: bill._id,
@@ -227,7 +234,13 @@ router.get('/bills/:id', async (req, res) => {
       paidFromHistory: paidFromHistory,
       paid: combinedPaid,
       due: combinedDue,
-      items: bill.items,
+      items: bill.items.map(item => {
+        const itemObj = item.toObject ? item.toObject() : item;
+        return {
+          ...itemObj,
+          uom: itemObj.uom || null
+        };
+      }),
       subtotal: bill.subtotal,
       cashPaid: bill.cashPaid,
       upiPaid: bill.upiPaid,

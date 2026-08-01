@@ -17,16 +17,14 @@ import Users from './pages/Users';
 import PaymentReport from './pages/PaymentReport';
 import SuperAdminLogin from './pages/SuperAdminLogin';
 import CompanyLogin from './pages/CompanyLogin';
-import ExpenseMaster from './pages/ExpenseMaster'; // or './components/ExpenseMaster'
-
-// In your App.jsx or routing file
+import ExpenseMaster from './pages/ExpenseMaster';
 import SeedDatabase from './pages/SeedDatabase';
-
-
-
 import ExpenseTransaction from './pages/ExpenseTransaction';
 
-// Add this to your app initialization
+// Import Barcode Manager
+import BarcodeManager from './pages/BarcodeManager'; // Save the barcode component as pages/BarcodeManager.jsx
+
+// Preload Tamil fonts
 const preloadTamilFonts = async () => {
   const canvas = document.createElement('canvas');
   const ctx = canvas.getContext('2d');
@@ -81,8 +79,6 @@ const App = () => {
         <div className="text-white text-center">
           <div className="text-4xl mb-4">🏢</div>
           <p>Loading...</p>
-
-          
         </div>
       </div>
     );
@@ -118,11 +114,15 @@ const App = () => {
           <Route path="products/brand" element={<Brand />} />
           <Route path="products/uom" element={<Uom />} />
           <Route path="products/product" element={<Product />} />
-                 <Route path="products/ProductBulk" element={<ProductBulk />} />
+          <Route path="products/ProductBulk" element={<ProductBulk />} />
+          
+          {/* Barcode Route */}
+          <Route path="products/barcodes" element={<BarcodeManager />} />
+          
           <Route path="pos" element={<POS />} />
           <Route path="RetailPos" element={<RetailPOS />} />
           <Route path="pos/edit/:id" element={<POS />} />
-             <Route path="RetailPos/edit/:id" element={<RetailPOS />} />
+          <Route path="RetailPos/edit/:id" element={<RetailPOS />} />
           <Route path="customer" element={<Customer />} />
           <Route path="users" element={<Users />} />
           <Route path="reports" element={<Report />} />
@@ -130,8 +130,7 @@ const App = () => {
           <Route path="payment-report" element={<PaymentReport />} />
           <Route path="/masters/expense" element={<ExpenseMaster />} />
           <Route path="/masters/expense-transaction" element={<ExpenseTransaction />} />
-          // Add this route
-<Route path="/seed-database" element={<SeedDatabase />} />
+          <Route path="/seed-database" element={<SeedDatabase />} />
 
           {/* Catch all - redirect to dashboard */}
           <Route path="*" element={<Navigate to="/dashboard" replace />} />
