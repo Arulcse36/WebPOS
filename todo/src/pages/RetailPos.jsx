@@ -29,7 +29,7 @@ const normalizeBarcodeId = (barcodeDetails) => {
     return String(barcodeDetails._id);
 };
 
-// ProductSearchInput with updated search prioritization
+// ProductSearchInput with updated search prioritization and purchase rate display
 const ProductSearchInput = forwardRef(({ 
     products, 
     barcodes, 
@@ -46,6 +46,7 @@ const ProductSearchInput = forwardRef(({
     const [price, setPrice] = useState(0);
     const [selectedIndex, setSelectedIndex] = useState(-1);
     const [isAdding, setIsAdding] = useState(false);
+    const [showPurchaseRate, setShowPurchaseRate] = useState(true); // Default to true
     
     const inputRef = useRef(null);
     const resultsRef = useRef(null);
@@ -94,6 +95,15 @@ const ProductSearchInput = forwardRef(({
             return product.wholesaleRate || product.retailRate || 0;
         }
         return product.retailRate || 0;
+    };
+
+    // Helper function to get purchase rate
+    const getPurchaseRate = (product, barcode) => {
+        if (!product) return 0;
+        if (barcode && barcode.purchaseRate) {
+            return barcode.purchaseRate;
+        }
+        return product.purchaseRate || 0;
     };
 
     // Auto-focus on mount
@@ -490,115 +500,140 @@ const ProductSearchInput = forwardRef(({
                             )}
                         </div>
 
-                        {/* Search Results Dropdown */}
-                        {showResults && searchResults.length > 0 && !selectedProduct && (
-                            <div 
-                                ref={resultsRef}
-                                className="absolute z-50 left-0 right-0 mt-2 bg-white border border-gray-200 rounded-xl shadow-2xl max-h-[400px] overflow-y-auto"
-                                style={{
-                                    minWidth: '100%',
-                                    width: 'auto',
-                                    position: 'absolute',
-                                    top: '100%',
-                                    left: 0,
-                                    right: 0,
-                                }}
-                            >
-                                <div className="sticky top-0 bg-gray-50 px-4 py-2 border-b border-gray-200 text-xs text-gray-500 font-medium z-10 flex justify-between items-center">
-                                    <span>{searchResults.length} product{searchResults.length > 1 ? 's' : ''} found</span>
-                                    <span className="text-xs text-indigo-600 font-normal">
-                                        Priority: Code → Barcode → Name
-                                    </span>
-                                </div>
-                                {searchResults.map((product, idx) => {
-                                    const isBarcodeMatch = product._matchType && product._matchType.includes('barcode');
-                                    const isCodeMatch = product._matchType && product._matchType.includes('code');
-                                    const matchedBarcode = product._matchedBarcode;
-                                    
-                                    return (
-                                        <button
-                                            id={`result-item-${idx}`}
-                                            key={product._id || idx}
-                                            onClick={() => handleSelectProduct(product)}
-                                            onMouseEnter={() => setSelectedIndex(idx)}
-                                            className={`w-full text-left p-3 transition-all duration-150 border-b border-gray-100 last:border-0 ${
-                                                selectedIndex === idx 
-                                                    ? 'bg-indigo-50 border-l-4 border-l-indigo-500' 
-                                                    : 'hover:bg-gray-50'
-                                            }`}
-                                        >
-                                            <div className="flex justify-between items-start">
-                                                <div className="flex-1 min-w-0">
-                                                    <div className="font-semibold text-gray-900 text-sm truncate">
-                                                        {safeString(product.name)}
-                                                        {isCodeMatch && (
-                                                            <span className="ml-2 text-xs text-blue-600 bg-blue-100 px-1.5 py-0.5 rounded-full">
-                                                                🔑 Code
-                                                            </span>
-                                                        )}
-                                                        {isBarcodeMatch && (
-                                                            <span className="ml-2 text-xs text-indigo-600 bg-indigo-100 px-1.5 py-0.5 rounded-full">
-                                                                📱 Barcode
-                                                            </span>
-                                                        )}
-                                                    </div>
-                                                    <div className="flex flex-wrap gap-1.5 mt-1">
-                                                        {product.productCode && (
-                                                            <span className={`text-xs px-2 py-0.5 rounded-full font-mono ${
-                                                                isCodeMatch 
-                                                                    ? 'bg-blue-100 text-blue-700 font-semibold' 
-                                                                    : 'bg-gray-100 text-gray-500'
-                                                            }`}>
-                                                                #{safeString(product.productCode)}
-                                                                {isCodeMatch && ' ★'}
-                                                            </span>
-                                                        )}
-                                                        {matchedBarcode && matchedBarcode.barcode && (
-                                                            <span className={`text-xs px-2 py-0.5 rounded-full font-mono ${
-                                                                isBarcodeMatch 
-                                                                    ? 'bg-indigo-100 text-indigo-600 font-semibold' 
-                                                                    : 'bg-gray-100 text-gray-500'
-                                                            }`}>
-                                                                📱 {safeString(matchedBarcode.barcode)}
-                                                                {isBarcodeMatch && ' ★'}
-                                                                {matchedBarcode.expiryDate && (
-                                                                    <span className="ml-1 text-gray-400">
-                                                                        (Exp: {new Date(matchedBarcode.expiryDate).toLocaleDateString()})
-                                                                    </span>
-                                                                )}
-                                                            </span>
-                                                        )}
-                                                        <span className="text-xs text-gray-500 bg-gray-100 px-2 py-0.5 rounded-full">
-                                                            {getUOMDisplay(product)}
-                                                        </span>
-                                                        {rateType === 'wholesale' && product.wholesaleRate && (
-                                                            <span className="text-xs text-purple-600 bg-purple-100 px-2 py-0.5 rounded-full">
-                                                                WS
-                                                            </span>
-                                                        )}
-                                                    </div>
-                                                    <div className="text-[10px] text-gray-400 mt-0.5">
-                                                        {getMatchTypeLabel(product._matchType)}
-                                                    </div>
-                                                </div>
-                                                <div className="text-right ml-3 flex-shrink-0">
-                                                    <div className="text-indigo-700 font-bold text-sm">
-                                                        {formatCurrency(getDisplayPrice(product, matchedBarcode))}
-                                                    </div>
-                                                    {isCodeMatch && (
-                                                        <div className="text-[10px] text-blue-600 font-medium">Code match!</div>
-                                                    )}
-                                                    {isBarcodeMatch && !isCodeMatch && (
-                                                        <div className="text-[10px] text-indigo-600 font-medium">Barcode match!</div>
-                                                    )}
-                                                </div>
-                                            </div>
-                                        </button>
-                                    );
-                                })}
+{showResults && searchResults.length > 0 && !selectedProduct && (
+    <div 
+        ref={resultsRef}
+        className="absolute z-50 left-0 right-0 mt-2 bg-white border border-gray-200 rounded-xl shadow-2xl max-h-[400px] overflow-y-auto"
+        style={{
+            minWidth: '100%',
+            width: 'auto',
+            position: 'absolute',
+            top: '100%',
+            left: 0,
+            right: 0,
+        }}
+    >
+        <div className="sticky top-0 bg-gray-50 px-4 py-2 border-b border-gray-200 text-xs text-gray-500 font-medium z-10 flex justify-between items-center">
+            <span>{searchResults.length} product{searchResults.length > 1 ? 's' : ''} found</span>
+            <div className="flex items-center gap-3">
+                <label className="flex items-center gap-1.5 cursor-pointer select-none">
+                    <input
+                        type="checkbox"
+                        checked={showPurchaseRate}
+                        onChange={(e) => setShowPurchaseRate(e.target.checked)}
+                        className="w-3.5 h-3.5 text-indigo-600 rounded focus:ring-indigo-500"
+                    />
+                    <span className="text-[10px] text-gray-600 font-medium">Show Cost</span>
+                </label>
+                <span className="text-xs text-indigo-600 font-normal">
+                    Priority: Code → Barcode → Name
+                </span>
+            </div>
+        </div>
+        {searchResults.map((product, idx) => {
+            const isBarcodeMatch = product._matchType && product._matchType.includes('barcode');
+            const isCodeMatch = product._matchType && product._matchType.includes('code');
+            const matchedBarcode = product._matchedBarcode;
+            const purchaseRate = getPurchaseRate(product, matchedBarcode);
+            const displayPrice = getDisplayPrice(product, matchedBarcode);
+            const profit = purchaseRate > 0 ? displayPrice - purchaseRate : null;
+            const profitMargin = purchaseRate > 0 && displayPrice > 0 ? ((profit / displayPrice) * 100).toFixed(1) : null;
+            
+            return (
+                <button
+                    id={`result-item-${idx}`}
+                    key={product._id || idx}
+                    onClick={() => handleSelectProduct(product)}
+                    onMouseEnter={() => setSelectedIndex(idx)}
+                    className={`w-full text-left p-3 transition-all duration-150 border-b border-gray-100 last:border-0 ${
+                        selectedIndex === idx 
+                            ? 'bg-indigo-50 border-l-4 border-l-indigo-500' 
+                            : 'hover:bg-gray-50'
+                    }`}
+                >
+                    <div className="flex justify-between items-start">
+                        <div className="flex-1 min-w-0">
+                            <div className="font-semibold text-gray-900 text-sm truncate">
+                                {safeString(product.name)}
+                                {/* Show match type badges */}
+                               
                             </div>
-                        )}
-                        
+                            <div className="flex flex-wrap gap-1.5 mt-1">
+                                {/* Show product code with icon at the front */}
+                                {product.productCode && (
+                                    <span className={`text-xs px-2 py-0.5 rounded-full font-mono ${
+                                        isCodeMatch 
+                                            ? 'bg-blue-100 text-blue-700 font-semibold' 
+                                            : 'bg-gray-100 text-gray-500'
+                                    }`}>
+                                        <span className="mr-1">🔑</span>
+                                        {safeString(product.productCode)}
+                                        {isCodeMatch && ' ★'}
+                                    </span>
+                                )}
+                                {/* Show barcode with icon at the front */}
+                                {matchedBarcode && matchedBarcode.barcode && (
+                                    <span className={`text-xs px-2 py-0.5 rounded-full font-mono ${
+                                        isBarcodeMatch 
+                                            ? 'bg-indigo-100 text-indigo-600 font-semibold' 
+                                            : 'bg-gray-100 text-gray-500'
+                                    }`}>
+                                        <span className="mr-1">📱</span>
+                                        {safeString(matchedBarcode.barcode)}
+                                        {isBarcodeMatch && ' ★'}
+                                        {matchedBarcode.expiryDate && (
+                                            <span className="ml-1 text-gray-400">
+                                                (Exp: {new Date(matchedBarcode.expiryDate).toLocaleDateString()})
+                                            </span>
+                                        )}
+                                    </span>
+                                )}
+                                {/* Show UOM */}
+                                <span className="text-xs text-gray-500 bg-gray-100 px-2 py-0.5 rounded-full">
+                                    {getUOMDisplay(product)}
+                                </span>
+                                {/* Show wholesale badge if applicable */}
+                                {rateType === 'wholesale' && product.wholesaleRate && (
+                                    <span className="text-xs text-purple-600 bg-purple-100 px-2 py-0.5 rounded-full">
+                                        WS
+                                    </span>
+                                )}
+                                {/* Show purchase rate badge */}
+                                {showPurchaseRate && purchaseRate > 0 && (
+                                    <span className={`text-xs px-2 py-0.5 rounded-full ${
+                                        profit !== null && profit >= 0 
+                                            ? 'bg-green-100 text-green-700' 
+                                            : profit !== null && profit < 0
+                                            ? 'bg-red-100 text-red-700'
+                                            : 'bg-orange-100 text-orange-700'
+                                    }`}>
+                                        Cost: {formatCurrency(purchaseRate)}
+                                       
+                                    </span>
+                                )}
+                            </div>
+                            {/* Show match type label */}
+                            <div className="text-[10px] text-gray-400 mt-0.5">
+                                {getMatchTypeLabel(product._matchType)}
+                            </div>
+                        </div>
+                        <div className="text-right ml-3 flex-shrink-0">
+                            <div className="text-indigo-700 font-bold text-sm">
+                                {formatCurrency(displayPrice)}
+                            </div>
+                            {isCodeMatch && (
+                                <div className="text-[10px] text-blue-600 font-medium">Code match!</div>
+                            )}
+                            {isBarcodeMatch && !isCodeMatch && (
+                                <div className="text-[10px] text-indigo-600 font-medium">Barcode match!</div>
+                            )}
+                        </div>
+                    </div>
+                </button>
+            );
+        })}
+    </div>
+)}
                         {showResults && searchResults.length === 0 && searchTerm.trim().length > 0 && !selectedProduct && (
                             <div className="absolute z-50 left-0 right-0 mt-2 bg-white border border-gray-200 rounded-xl shadow-xl p-4 text-center">
                                 <div className="text-3xl mb-1">🔍</div>
@@ -720,6 +755,7 @@ const ProductSearchInput = forwardRef(({
         </div>
     );
 });
+
 // ─── Cart Grid with Barcode Grouping ─────────────────────────────────────────
 const CartGrid = ({ items, onUpdateQuantity, onRemoveItem, onEditPrice }) => {
     const [editingQtyId, setEditingQtyId] = useState(null);
@@ -1153,78 +1189,78 @@ const RetailPos = () => {
         });
     }, [removeItem]);
 
-const handleAddToCart = useCallback(async (product, quantity, customPrice = null) => {
-    if (!product || !product._id) {
-        console.error("Invalid product object:", product);
-        alert("Invalid product selected");
-        return;
-    }
-    
-    if (!quantity || quantity <= 0) {
-        alert("Please enter a valid quantity");
-        return;
-    }
-    
-    const freshProduct = await fetchProductDetails(product._id);
-    const productName = freshProduct?.name || product.name || 'Product';
-    
-    let price;
-    if (customPrice !== null) {
-        price = roundToTwoDecimals(customPrice);
-    } else if (rateType === "wholesale") {
-        price = roundToTwoDecimals(freshProduct?.wholesaleRate || product.wholesaleRate || freshProduct?.retailRate || product.retailRate || 0);
-    } else {
-        price = roundToTwoDecimals(freshProduct?.retailRate || product.retailRate || 0);
-    }
-    
-    const uom = getUOMDisplay(freshProduct || product);
-    const productId = product._id;
-    
-    // Check if we already have this product with the same barcode in cart
-    const barcodeId = normalizeBarcodeId(product.barcodeDetails);
-    
-    setCart(prev => {
-        const currentCart = Array.isArray(prev) ? prev : [];
-        
-        // Find existing item with same product and same barcode
-        const existingIndex = currentCart.findIndex(i => {
-            const itemBarcodeId = normalizeBarcodeId(i.barcodeDetails);
-            return i && i.product === productId && itemBarcodeId === barcodeId;
-        });
-        
-        if (existingIndex !== -1) {
-            const existing = currentCart[existingIndex];
-            const newQty = roundToTwoDecimals((existing.qty || 0) + quantity);
-            const newTotal = roundToTwoDecimals(newQty * price);
-            const updatedCart = [...currentCart];
-            updatedCart[existingIndex] = {
-                ...existing,
-                qty: newQty,
-                total: newTotal,
-                uom: uom,
-                price: price,
-                name: productName,
-                isPriceEdited: customPrice !== null,
-                barcodeDetails: product.barcodeDetails || null
-                // id is preserved from `existing` via the spread above
-            };
-            return updatedCart;
-        } else {
-            const newItem = {
-                id: makeCartLineId(),
-                product: productId,
-                name: productName,
-                price: price,
-                qty: quantity,
-                total: roundToTwoDecimals(price * quantity),
-                uom: uom,
-                isPriceEdited: customPrice !== null,
-                barcodeDetails: product.barcodeDetails || null
-            };
-            return [...currentCart, newItem];
+    const handleAddToCart = useCallback(async (product, quantity, customPrice = null) => {
+        if (!product || !product._id) {
+            console.error("Invalid product object:", product);
+            alert("Invalid product selected");
+            return;
         }
-    });
-}, [fetchProductDetails, getUOMDisplay, rateType]);
+        
+        if (!quantity || quantity <= 0) {
+            alert("Please enter a valid quantity");
+            return;
+        }
+        
+        const freshProduct = await fetchProductDetails(product._id);
+        const productName = freshProduct?.name || product.name || 'Product';
+        
+        let price;
+        if (customPrice !== null) {
+            price = roundToTwoDecimals(customPrice);
+        } else if (rateType === "wholesale") {
+            price = roundToTwoDecimals(freshProduct?.wholesaleRate || product.wholesaleRate || freshProduct?.retailRate || product.retailRate || 0);
+        } else {
+            price = roundToTwoDecimals(freshProduct?.retailRate || product.retailRate || 0);
+        }
+        
+        const uom = getUOMDisplay(freshProduct || product);
+        const productId = product._id;
+        
+        // Check if we already have this product with the same barcode in cart
+        const barcodeId = normalizeBarcodeId(product.barcodeDetails);
+        
+        setCart(prev => {
+            const currentCart = Array.isArray(prev) ? prev : [];
+            
+            // Find existing item with same product and same barcode
+            const existingIndex = currentCart.findIndex(i => {
+                const itemBarcodeId = normalizeBarcodeId(i.barcodeDetails);
+                return i && i.product === productId && itemBarcodeId === barcodeId;
+            });
+            
+            if (existingIndex !== -1) {
+                const existing = currentCart[existingIndex];
+                const newQty = roundToTwoDecimals((existing.qty || 0) + quantity);
+                const newTotal = roundToTwoDecimals(newQty * price);
+                const updatedCart = [...currentCart];
+                updatedCart[existingIndex] = {
+                    ...existing,
+                    qty: newQty,
+                    total: newTotal,
+                    uom: uom,
+                    price: price,
+                    name: productName,
+                    isPriceEdited: customPrice !== null,
+                    barcodeDetails: product.barcodeDetails || null
+                    // id is preserved from `existing` via the spread above
+                };
+                return updatedCart;
+            } else {
+                const newItem = {
+                    id: makeCartLineId(),
+                    product: productId,
+                    name: productName,
+                    price: price,
+                    qty: quantity,
+                    total: roundToTwoDecimals(price * quantity),
+                    uom: uom,
+                    isPriceEdited: customPrice !== null,
+                    barcodeDetails: product.barcodeDetails || null
+                };
+                return [...currentCart, newItem];
+            }
+        });
+    }, [fetchProductDetails, getUOMDisplay, rateType]);
 
     const handleRateTypeChange = useCallback((type) => {
         if (type === rateType) return;
